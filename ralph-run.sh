@@ -11,6 +11,7 @@
 #
 # Usage:
 #   ~/Downloads/clawkey/ralph-run.sh                              # claude backend
+#   ~/Downloads/clawkey/ralph-run.sh -C ~/my-project              # specify working dir
 #   CLAWKEY_BACKEND=aider ~/Downloads/clawkey/ralph-run.sh        # aider backend
 #   PORTKEY_MODEL=gemini-3.1-pro-preview ~/Downloads/clawkey/ralph-run.sh
 
@@ -18,6 +19,16 @@ set -euo pipefail
 
 CLAWKEY_DIR="$(cd "$(dirname "$0")" && pwd)"
 CALLER_DIR="$(pwd)"
+
+# Parse -C <dir> option (must be first argument)
+if [ "${1:-}" = "-C" ]; then
+    if [ -z "${2:-}" ]; then
+        echo "Error: -C requires a directory argument."
+        exit 1
+    fi
+    CALLER_DIR="$(cd "$2" && pwd)"
+    shift 2
+fi
 
 # Load environment
 source "${CLAWKEY_DIR}/setup-env.sh"

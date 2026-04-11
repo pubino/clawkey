@@ -91,13 +91,15 @@ Start Claude Code in your current directory, routed through LiteLLM + Portkey:
 # Default model (gemini-3.1-pro-preview or whatever you configured)
 ./run.sh
 
+# Specify a working directory (-C must be the first argument)
+~/Downloads/clawkey/run.sh -C ~/my-project
+
 # Override model for this session
-PORTKEY_MODEL=gemini-3.1-pro-preview ./run.sh
 PORTKEY_MODEL=gpt-5-mini ./run.sh
 PORTKEY_MODEL=mistral-medium-2505 ./run.sh
 
-# Run from any directory — Claude Code opens there, not in clawkey/
-cd ~/my-project && ~/Downloads/clawkey/run.sh
+# Combine -C with model override
+PORTKEY_MODEL=gpt-5-mini ~/Downloads/clawkey/run.sh -C ~/my-project
 ```
 
 ### One-shot queries
@@ -134,6 +136,9 @@ When all requirements are met, output: LOOP_COMPLETE
 ```bash
 # 2. Run Ralph with Claude Code backend (default)
 ~/Downloads/clawkey/ralph-run.sh
+
+# Specify a working directory
+~/Downloads/clawkey/ralph-run.sh -C ~/my-project
 
 # Override model
 PORTKEY_MODEL=gpt-5-mini ~/Downloads/clawkey/ralph-run.sh
