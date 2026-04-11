@@ -1,0 +1,459 @@
+#!/usr/bin/env bash
+# clawkey — Manage Clawkey configuration, API keys, and model list.
+#
+# Usage:
+#   clawkey                  Interactive menu
+#   clawkey status           Show current configuration
+#   clawkey config           Configure API key and default model
+#   clawkey config --clear   Clear API key and reset defaults
+#   clawkey models           List configured models
+#   clawkey models --add     Add a model
+#   clawkey models --remove  Remove a model
+#   clawkey help             Show help
+
+set -euo pipefail
+
+CLAWKEY_DIR="$(cd "$(dirname "$0")" && pwd)"
+CONFIG_FILE="${CLAWKEY_DIR}/litellm_config.yaml"
+ENV_FILE="${CLAWKEY_DIR}/setup-env.sh"
+
+# Activate venv if it exists (for pyyaml access)
+if [ -d "${CLAWKEY_DIR}/.venv" ]; then
+    source "${CLAWKEY_DIR}/.venv/bin/activate"
+fi
+
+# ── Colors ──────────────────────────────────────────────────────────
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+DIM='\033[2m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# ── Helpers ─────────────────────────────────────────────────────────
+
+banner() {
+    echo ""
+    echo -e "${CYAN}${BOLD}  ╭──────────────────────────────────────────╮${RESET}"
+    echo -e "${CYAN}${BOLD}  │${RESET}  ${WHITE}${BOLD}Clawkey${RESET}  ${DIM}Claude Code + Portkey Gateway${RESET}  ${CYAN}${BOLD}│${RESET}"
+    echo -e "${CYAN}${BOLD}  ╰──────────────────────────────────────────╯${RESET}"
+    echo ""
+}
+
+divider() {
+    echo -e "  ${DIM}──────────────────────────────────────────${RESET}"
+}
+
+info()   { echo -e "  ${BLUE}info${RESET}  $1"; }
+ok()     { echo -e "  ${GREEN}  ok${RESET}  $1"; }
+warn()   { echo -e "  ${YELLOW}warn${RESET}  $1"; }
+err()    { echo -e "  ${RED} err${RESET}  $1"; }
+ask()    { echo -en "  ${MAGENTA}   ?${RESET}  $1"; }
+
+get_api_key() {
+    if [ -f "$ENV_FILE" ]; then
+        (source "$ENV_FILE" 2>/dev/null && echo "${AI_SANDBOX_KEY:-}")
+    fi
+}
+
+get_model() {
+    if [ -f "$ENV_FILE" ]; then
+        (source "$ENV_FILE" 2>/dev/null && echo "${PORTKEY_MODEL:-gemini-3.1-pro-preview}")
+    else
+        echo "gemini-3.1-pro-preview"
+    fi
+}
+
+list_models() {
+    python3 -c "
+import yaml
+with open('${CONFIG_FILE}') as f:
+    config = yaml.safe_load(f)
+for m in config.get('model_list', []):
+    print(m['model_name'])
+" 2>/dev/null || true
+}
+
+model_count() {
+    list_models | wc -l | tr -d ' '
+}
+
+mask_key() {
+    local key="$1"
+    if [ ${#key} -gt 8 ]; then
+        echo "${key:0:4}...${key: -4}"
+    else
+        echo "****"
+    fi
+}
+
+# ── Commands ────────────────────────────────────────────────────────
+
+cmd_status() {
+    banner
+    echo -e "  ${WHITE}${BOLD}Current Configuration${RESET}"
+    echo ""
+
+    # API Key
+    local key
+    key=$(get_api_key)
+    if [ -n "$key" ] && [ "$key" != "<your-portkey-api-key>" ]; then
+        ok "API key      ${GREEN}$(mask_key "$key")${RESET}"
+    else
+        warn "API key      ${YELLOW}not configured${RESET}"
+    fi
+
+    # Default model
+    local model
+    model=$(get_model)
+    ok "Default model  ${GREEN}${model}${RESET}"
+
+    # Model count
+    if [ -f "$CONFIG_FILE" ]; then
+        ok "Model list   ${GREEN}$(model_count) models${RESET} in litellm_config.yaml"
+    else
+        warn "Model list   ${YELLOW}litellm_config.yaml not found${RESET}"
+    fi
+
+    # Env file
+    if [ -f "$ENV_FILE" ]; then
+        ok "Env file     ${GREEN}setup-env.sh${RESET}"
+    else
+        warn "Env file     ${YELLOW}setup-env.sh not found${RESET}"
+    fi
+
+    divider
+    echo -e "  ${WHITE}${BOLD}Models${RESET}"
+    echo ""
+    list_models | while IFS= read -r m; do
+        if [ "$m" = "$model" ]; then
+            echo -e "    ${GREEN}*${RESET} ${WHITE}${m}${RESET}  ${DIM}(default)${RESET}"
+        else
+            echo -e "    ${DIM}-${RESET} ${m}"
+        fi
+    done
+    echo ""
+}
+
+cmd_config() {
+    banner
+    echo -e "  ${WHITE}${BOLD}Configure Clawkey${RESET}"
+    echo ""
+
+    local key
+    key=$(get_api_key)
+    local model
+    model=$(get_model)
+
+    # ── API Key ──
+    if [ -n "$key" ] && [ "$key" != "<your-portkey-api-key>" ]; then
+        info "Current API key: $(mask_key "$key")"
+        ask "New API key ${DIM}(Enter to keep current)${RESET}: "
+    else
+        ask "Portkey AI Sandbox API key: "
+    fi
+    read -r new_key
+    if [ -n "$new_key" ]; then
+        key="$new_key"
+    fi
+    if [ -z "$key" ] || [ "$key" = "<your-portkey-api-key>" ]; then
+        err "API key is required."
+        return 1
+    fi
+
+    # ── Model Selection ──
+    echo ""
+    info "Current default model: ${CYAN}${model}${RESET}"
+    echo ""
+    local models=()
+    local i=1
+    while IFS= read -r m; do
+        models+=("$m")
+        if [ "$m" = "$model" ]; then
+            echo -e "    ${GREEN}${i})${RESET} ${WHITE}${m}${RESET}  ${DIM}(current)${RESET}"
+        else
+            echo -e "    ${CYAN}${i})${RESET} ${m}"
+        fi
+        i=$((i + 1))
+    done < <(list_models)
+
+    echo ""
+    ask "Select model ${DIM}[1-${#models[@]}]${RESET} ${DIM}(Enter to keep ${model})${RESET}: "
+    read -r choice
+    if [ -n "$choice" ] && [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -le "${#models[@]}" ] 2>/dev/null; then
+        model="${models[$((choice - 1))]}"
+    fi
+
+    # ── Write ──
+    cat > "$ENV_FILE" << ENVEOF
+#!/usr/bin/env bash
+export AI_SANDBOX_KEY="${key}"
+export PORTKEY_MODEL="\${PORTKEY_MODEL:-${model}}"
+ENVEOF
+    chmod +x "$ENV_FILE"
+
+    echo ""
+    divider
+    ok "Saved to setup-env.sh"
+    ok "API key      ${GREEN}$(mask_key "$key")${RESET}"
+    ok "Model        ${GREEN}${model}${RESET}"
+    echo ""
+}
+
+cmd_config_clear() {
+    banner
+    echo -e "  ${WHITE}${BOLD}Clear Configuration${RESET}"
+    echo ""
+
+    if [ ! -f "$ENV_FILE" ]; then
+        warn "No setup-env.sh found. Nothing to clear."
+        echo ""
+        return 0
+    fi
+
+    local key
+    key=$(get_api_key)
+    if [ -n "$key" ] && [ "$key" != "<your-portkey-api-key>" ]; then
+        info "Current API key: $(mask_key "$key")"
+    fi
+
+    ask "Clear API key and reset to defaults? ${DIM}[y/N]${RESET}: "
+    read -r confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        info "Cancelled."
+        echo ""
+        return 0
+    fi
+
+    cat > "$ENV_FILE" << 'ENVEOF'
+#!/usr/bin/env bash
+export AI_SANDBOX_KEY="${AI_SANDBOX_KEY:-<your-portkey-api-key>}"
+export PORTKEY_MODEL="${PORTKEY_MODEL:-gemini-3.1-pro-preview}"
+export LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-clawkey-local}"
+ENVEOF
+    chmod +x "$ENV_FILE"
+
+    echo ""
+    ok "API key cleared. Model reset to ${GREEN}gemini-3.1-pro-preview${RESET}."
+    echo ""
+}
+
+cmd_models() {
+    banner
+    echo -e "  ${WHITE}${BOLD}Configured Models${RESET}"
+    echo ""
+
+    local model
+    model=$(get_model)
+    local i=1
+    while IFS= read -r m; do
+        if [ "$m" = "$model" ]; then
+            echo -e "    ${GREEN}${i})${RESET} ${WHITE}${m}${RESET}  ${DIM}(default)${RESET}"
+        else
+            echo -e "    ${CYAN}${i})${RESET} ${m}"
+        fi
+        i=$((i + 1))
+    done < <(list_models)
+
+    echo ""
+    echo -e "  ${DIM}Manage: clawkey models --add | clawkey models --remove${RESET}"
+    echo ""
+}
+
+cmd_models_add() {
+    banner
+    echo -e "  ${WHITE}${BOLD}Add Model${RESET}"
+    echo ""
+
+    echo -e "  ${DIM}The model name must match what Portkey exposes.${RESET}"
+    echo -e "  ${DIM}Examples: gpt-4o, claude-sonnet-4-20250514, gemini-2.5-flash${RESET}"
+    echo ""
+    ask "Model name: "
+    read -r name
+    if [ -z "$name" ]; then
+        err "Model name is required."
+        return 1
+    fi
+
+    # Check duplicate
+    if list_models | grep -qx "$name"; then
+        warn "Model '${name}' already exists."
+        echo ""
+        return 0
+    fi
+
+    python3 << PYEOF
+import yaml
+
+with open('${CONFIG_FILE}') as f:
+    config = yaml.safe_load(f)
+
+config['model_list'].append({
+    'model_name': '${name}',
+    'litellm_params': {
+        'model': 'openai/${name}',
+        'api_base': 'https://api.portkey.ai/v1',
+        'api_key': 'os.environ/AI_SANDBOX_KEY'
+    }
+})
+
+with open('${CONFIG_FILE}', 'w') as f:
+    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+PYEOF
+
+    ok "Added: ${GREEN}${name}${RESET}"
+    echo ""
+}
+
+cmd_models_remove() {
+    banner
+    echo -e "  ${WHITE}${BOLD}Remove Model${RESET}"
+    echo ""
+
+    local models=()
+    local i=1
+    while IFS= read -r m; do
+        models+=("$m")
+        echo -e "    ${CYAN}${i})${RESET} ${m}"
+        i=$((i + 1))
+    done < <(list_models)
+
+    if [ "${#models[@]}" -eq 0 ]; then
+        warn "No models configured."
+        echo ""
+        return 0
+    fi
+
+    echo ""
+    ask "Model to remove ${DIM}[1-${#models[@]}]${RESET} ${DIM}(Enter to cancel)${RESET}: "
+    read -r choice
+    if [ -z "$choice" ]; then
+        info "Cancelled."
+        echo ""
+        return 0
+    fi
+
+    if ! [ "$choice" -ge 1 ] 2>/dev/null || ! [ "$choice" -le "${#models[@]}" ] 2>/dev/null; then
+        err "Invalid selection."
+        return 1
+    fi
+
+    local name="${models[$((choice - 1))]}"
+
+    ask "Remove '${name}'? ${DIM}[y/N]${RESET}: "
+    read -r confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        info "Cancelled."
+        echo ""
+        return 0
+    fi
+
+    python3 << PYEOF
+import yaml
+
+with open('${CONFIG_FILE}') as f:
+    config = yaml.safe_load(f)
+
+config['model_list'] = [m for m in config['model_list'] if m['model_name'] != '${name}']
+
+with open('${CONFIG_FILE}', 'w') as f:
+    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+PYEOF
+
+    ok "Removed: ${RED}${name}${RESET}"
+
+    local current_model
+    current_model=$(get_model)
+    if [ "$current_model" = "$name" ]; then
+        warn "That was the default model. Run ${CYAN}clawkey config${RESET} to pick a new one."
+    fi
+    echo ""
+}
+
+# ── Interactive Menu ────────────────────────────────────────────────
+
+cmd_menu() {
+    while true; do
+        banner
+        echo -e "    ${CYAN}1${RESET})  Show status"
+        echo -e "    ${CYAN}2${RESET})  Configure API key and model"
+        echo -e "    ${CYAN}3${RESET})  List models"
+        echo -e "    ${CYAN}4${RESET})  Add a model"
+        echo -e "    ${CYAN}5${RESET})  Remove a model"
+        echo -e "    ${CYAN}6${RESET})  Clear configuration"
+        echo -e "    ${DIM}q)  Exit${RESET}"
+        echo ""
+        ask "Select ${DIM}[1-6, q]${RESET}: "
+        read -r choice
+
+        case "$choice" in
+            1) cmd_status ;;
+            2) cmd_config ;;
+            3) cmd_models ;;
+            4) cmd_models_add ;;
+            5) cmd_models_remove ;;
+            6) cmd_config_clear ;;
+            q|Q) break ;;
+            "") break ;;
+            *) err "Invalid option." ;;
+        esac
+
+        echo ""
+        echo -e "  ${DIM}Press Enter to continue...${RESET}"
+        read -r
+    done
+}
+
+# ── Main ────────────────────────────────────────────────────────────
+
+case "${1:-}" in
+    status)
+        cmd_status
+        ;;
+    config)
+        if [ "${2:-}" = "--clear" ]; then
+            cmd_config_clear
+        else
+            cmd_config
+        fi
+        ;;
+    models)
+        case "${2:-}" in
+            --add)    cmd_models_add ;;
+            --remove) cmd_models_remove ;;
+            *)        cmd_models ;;
+        esac
+        ;;
+    help|--help|-h)
+        echo ""
+        echo -e "${WHITE}${BOLD}clawkey${RESET} — Manage Clawkey configuration and models"
+        echo ""
+        echo -e "${DIM}Usage:${RESET}"
+        echo "  clawkey                  Interactive menu"
+        echo "  clawkey status           Show current configuration"
+        echo "  clawkey config           Configure API key and default model"
+        echo "  clawkey config --clear   Clear API key and reset to defaults"
+        echo "  clawkey models           List configured models"
+        echo "  clawkey models --add     Add a model to litellm_config.yaml"
+        echo "  clawkey models --remove  Remove a model from litellm_config.yaml"
+        echo "  clawkey help             Show this help"
+        echo ""
+        echo -e "${DIM}Run scripts:${RESET}"
+        echo "  ./run.sh                 Interactive Claude Code via LiteLLM + Portkey"
+        echo "  ./ralph-run.sh           Ralph orchestrator (reads PROMPT.md)"
+        echo ""
+        ;;
+    "")
+        cmd_menu
+        ;;
+    *)
+        err "Unknown command: $1"
+        echo "  Run 'clawkey help' for usage."
+        exit 1
+        ;;
+esac
