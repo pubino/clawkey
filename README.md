@@ -114,7 +114,7 @@ PORTKEY_MODEL=gpt-5-mini ~/Downloads/clawkey/run.sh -C ~/my-project
 
 ### Ralph orchestrator with Claude Code backend
 
-Ralph reads a task from `PROMPT.md`, runs your backend up to 3 times (600s timeout), and exits when the output contains `LOOP_COMPLETE`.
+Ralph reads a task from `PROMPT.md`, runs your backend up to 100 iterations (600s timeout), and exits when the output contains `LOOP_COMPLETE`.
 
 ```bash
 # 1. Write your task in PROMPT.md (must include LOOP_COMPLETE signal)
