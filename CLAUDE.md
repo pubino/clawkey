@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Clawkey routes [Claude Code](https://docs.anthropic.com/en/docs/claude-code) through [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) and [Portkey AI Gateway](https://portkey.ai). This enables Claude Code's full interactive agent mode (tool use, file editing, code execution) with any model available in the AI Sandbox (GPT, Gemini, Llama, Mistral).
 
-LiteLLM translates Anthropic tool_use <> OpenAI function_call, which Portkey alone cannot do. Uses the same `AI_SANDBOX_KEY` credential as ralphkey.
+LiteLLM translates Anthropic tool_use <> OpenAI function_call, which Portkey alone cannot do.
 
 Clawkey never modifies the user's existing Claude Code configuration (`~/.claude/` or project `.claude/`). All routing is done via process-scoped environment variables that only affect the spawned session.
 
@@ -88,7 +88,7 @@ docker build -t clawkey:latest .      # Build test image
 
 Defined in `setup-env.sh` (git-ignored). Template in `.env.example`. Manage with `./clawkey config`.
 
-- `AI_SANDBOX_KEY`: Portkey API key (same as ralphkey)
+- `AI_SANDBOX_KEY`: Portkey API key
 - `PORTKEY_MODEL`: Model selector (default: `gemini-3.1-pro-preview`)
 - `LITELLM_MASTER_KEY`: LiteLLM proxy auth key (auto-generated if not set)
 - `CLAWKEY_BACKEND`: Ralph backend — `claude` (default) or `aider`

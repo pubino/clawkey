@@ -2,7 +2,7 @@
 
 Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in **full interactive agent mode** with any model in the [Portkey AI Gateway](https://portkey.ai) — OpenAI, Google Gemini, Meta Llama, Mistral — using [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) for protocol translation.
 
-Optionally run the [Ralph](https://github.com/ralphkey) orchestrator with a swappable backend: **Claude Code** or **aider**.
+Optionally run the [Ralph](https://github.com/ralph-cli/ralph) orchestrator with a swappable backend: **Claude Code** or **aider**.
 
 ## How It Works
 
@@ -29,7 +29,7 @@ Claude Code sends Anthropic Messages API requests with `tool_use` blocks. LiteLL
 - `AI_SANDBOX_KEY` from your institution's AI Sandbox
 
 Optional for Ralph orchestration:
-- [Ralph](https://github.com/ralphkey) orchestrator
+- [Ralph](https://github.com/ralph-cli/ralph) orchestrator
 - [aider](https://aider.chat) (for aider backend only)
 
 ## Quick Start
@@ -235,17 +235,3 @@ docker-compose run --rm test-config   # Config-only tests
 | `test_ralph_config.py` | ralph.yml, portkey-backend.sh, PROMPT.md | Nothing |
 | `test_litellm_proxy.py` | Health check, Messages API, tool_use round-trip | Running proxy + API key |
 | `test_portkey_connection.py` | Direct Portkey chat completions, per-model tests | API key |
-
-## Comparison with Ralphkey
-
-| Aspect | Ralphkey | Clawkey |
-|--------|----------|---------|
-| Frontend | aider | Claude Code (agent mode) |
-| Orchestrator | Ralph | Claude Code agent loop or Ralph |
-| API format | OpenAI `/v1/chat/completions` | Anthropic `/v1/messages` via LiteLLM |
-| Translation | None (Portkey direct) | LiteLLM (Anthropic <> OpenAI) |
-| Auth | Bearer token to Portkey | LiteLLM master key to proxy |
-| Base URL | `https://api.portkey.ai/v1` | `http://localhost:4040` (proxy) |
-| API key | `AI_SANDBOX_KEY` | `AI_SANDBOX_KEY` (same) |
-
-Both projects share the same Portkey gateway and `AI_SANDBOX_KEY`. Clawkey adds LiteLLM as a translation layer because Claude Code requires the Anthropic protocol, while aider speaks OpenAI natively.

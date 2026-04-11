@@ -22,7 +22,7 @@ if [ ! -f setup-env.sh ]; then
     cat > setup-env.sh << 'EOF'
 #!/usr/bin/env bash
 # Source this file to load Portkey credentials.
-# Uses the same AI_SANDBOX_KEY as ralphkey.
+# Provided by your institution's AI Sandbox.
 
 export AI_SANDBOX_KEY="${AI_SANDBOX_KEY:-<your-portkey-api-key>}"
 export PORTKEY_MODEL="${PORTKEY_MODEL:-gemini-3.1-pro-preview}"
