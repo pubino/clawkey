@@ -1,0 +1,18 @@
+# Secrets and environment
+.env
+setup-env.sh
+*.key
+*.pem
+
+# Claude Code
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
+
+# OS
+.DS_Store

@@ -1,0 +1,20 @@
+cli:
+  backend: "custom"
+  command: "./portkey-backend.sh"
+  prompt_mode: "arg"
+
+event_loop:
+  prompt_file: "PROMPT.md"
+  completion_promise: "LOOP_COMPLETE"
+  max_iterations: 3
+  max_runtime_seconds: 600
+  idle_timeout_secs: 120
+
+core:
+  scratchpad: ".ralph/agent/scratchpad.md"
+  specs_dir: ".ralph/specs/"
+
+features:
+  parallel: false
+  preflight:
+    enabled: false
