@@ -21,9 +21,14 @@ def test_litellm_config_exists():
     assert os.path.exists(config), "litellm_config.yaml not found"
 
 
-def test_setup_env_exists():
-    setup = os.path.join(PROJECT_ROOT, "setup-env.sh")
-    assert os.path.exists(setup), "setup-env.sh not found"
+def test_env_file_exists():
+    env_file = os.path.join(PROJECT_ROOT, ".env")
+    assert os.path.exists(env_file), ".env not found"
+
+
+def test_load_env_exists():
+    script = os.path.join(PROJECT_ROOT, "load-env.sh")
+    assert os.path.exists(script), "load-env.sh not found"
 
 
 def test_run_script_exports_anthropic_auth_token():
@@ -49,15 +54,14 @@ def test_run_script_does_not_write_settings_json():
     )
 
 
-def test_litellm_config_has_models():
-    """litellm_config.yaml must define at least one model."""
+def test_litellm_config_valid():
+    """litellm_config.yaml must have a model_list key (may be empty before first ./clawkey models --add)."""
     import yaml
     config_path = os.path.join(PROJECT_ROOT, "litellm_config.yaml")
     with open(config_path) as f:
         config = yaml.safe_load(f)
     assert "model_list" in config, "Missing model_list in litellm_config.yaml"
-    assert len(config["model_list"]) > 0, "model_list is empty"
-    for model in config["model_list"]:
+    for model in config.get("model_list") or []:
         assert "model_name" in model, f"Model entry missing model_name: {model}"
         assert "litellm_params" in model, f"Model entry missing litellm_params: {model}"
 

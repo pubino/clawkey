@@ -17,7 +17,10 @@ def portkey_base_url():
 
 @pytest.fixture
 def portkey_model():
-    return os.environ.get("PORTKEY_MODEL", "gemini-3.1-pro-preview")
+    model = os.environ.get("PORTKEY_MODEL")
+    if not model:
+        pytest.skip("PORTKEY_MODEL not set")
+    return model
 
 
 @pytest.fixture

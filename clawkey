@@ -15,7 +15,7 @@ set -euo pipefail
 
 CLAWKEY_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_FILE="${CLAWKEY_DIR}/litellm_config.yaml"
-ENV_FILE="${CLAWKEY_DIR}/setup-env.sh"
+ENV_FILE="${CLAWKEY_DIR}/.env"
 
 # Activate venv if it exists (for pyyaml access)
 if [ -d "${CLAWKEY_DIR}/.venv" ]; then
@@ -57,15 +57,13 @@ ask()    { echo -en "  ${MAGENTA}   ?${RESET}  $1"; }
 
 get_api_key() {
     if [ -f "$ENV_FILE" ]; then
-        (source "$ENV_FILE" 2>/dev/null && echo "${AI_SANDBOX_KEY:-}")
+        grep -m1 '^AI_SANDBOX_KEY=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-
     fi
 }
 
 get_model() {
     if [ -f "$ENV_FILE" ]; then
-        (source "$ENV_FILE" 2>/dev/null && echo "${PORTKEY_MODEL:-gemini-3.1-pro-preview}")
-    else
-        echo "gemini-3.1-pro-preview"
+        grep -m1 '^PORTKEY_MODEL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true
     fi
 }
 
@@ -111,7 +109,11 @@ cmd_status() {
     # Default model
     local model
     model=$(get_model)
-    ok "Default model  ${GREEN}${model}${RESET}"
+    if [ -n "$model" ]; then
+        ok "Default model  ${GREEN}${model}${RESET}"
+    else
+        warn "Default model  ${YELLOW}not configured${RESET}  ${DIM}Run: clawkey config${RESET}"
+    fi
 
     # Model count
     if [ -f "$CONFIG_FILE" ]; then
@@ -122,9 +124,9 @@ cmd_status() {
 
     # Env file
     if [ -f "$ENV_FILE" ]; then
-        ok "Env file     ${GREEN}setup-env.sh${RESET}"
+        ok "Env file     ${GREEN}.env${RESET}"
     else
-        warn "Env file     ${YELLOW}setup-env.sh not found${RESET}"
+        warn "Env file     ${YELLOW}.env not found${RESET}"
     fi
 
     divider
@@ -168,8 +170,6 @@ cmd_config() {
 
     # ── Model Selection ──
     echo ""
-    info "Current default model: ${CYAN}${model}${RESET}"
-    echo ""
     local models=()
     local i=1
     while IFS= read -r m; do
@@ -182,26 +182,52 @@ cmd_config() {
         i=$((i + 1))
     done < <(list_models)
 
+    if [ "${#models[@]}" -eq 0 ]; then
+        warn "No models configured. Run ${CYAN}clawkey models --add${RESET} first."
+        echo ""
+        # Still save the API key
+        cat > "$ENV_FILE" << ENVEOF
+AI_SANDBOX_KEY=${key}
+LITELLM_MASTER_KEY=sk-clawkey-local
+ENVEOF
+        divider
+        ok "Saved API key to .env"
+        ok "API key      ${GREEN}$(mask_key "$key")${RESET}"
+        echo ""
+        return 0
+    fi
+
+    if [ -n "$model" ]; then
+        info "Current default model: ${CYAN}${model}${RESET}"
+    fi
     echo ""
-    ask "Select model ${DIM}[1-${#models[@]}]${RESET} ${DIM}(Enter to keep ${model})${RESET}: "
+    ask "Select model ${DIM}[1-${#models[@]}]${RESET} ${DIM}(Enter to keep ${model:-current})${RESET}: "
     read -r choice
     if [ -n "$choice" ] && [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -le "${#models[@]}" ] 2>/dev/null; then
         model="${models[$((choice - 1))]}"
     fi
 
     # ── Write ──
-    cat > "$ENV_FILE" << ENVEOF
-#!/usr/bin/env bash
-export AI_SANDBOX_KEY="${key}"
-export PORTKEY_MODEL="\${PORTKEY_MODEL:-${model}}"
+    if [ -n "$model" ]; then
+        cat > "$ENV_FILE" << ENVEOF
+AI_SANDBOX_KEY=${key}
+PORTKEY_MODEL=${model}
+LITELLM_MASTER_KEY=sk-clawkey-local
 ENVEOF
-    chmod +x "$ENV_FILE"
+    else
+        cat > "$ENV_FILE" << ENVEOF
+AI_SANDBOX_KEY=${key}
+LITELLM_MASTER_KEY=sk-clawkey-local
+ENVEOF
+    fi
 
     echo ""
     divider
-    ok "Saved to setup-env.sh"
+    ok "Saved to .env"
     ok "API key      ${GREEN}$(mask_key "$key")${RESET}"
-    ok "Model        ${GREEN}${model}${RESET}"
+    if [ -n "$model" ]; then
+        ok "Model        ${GREEN}${model}${RESET}"
+    fi
     echo ""
 }
 
@@ -211,7 +237,7 @@ cmd_config_clear() {
     echo ""
 
     if [ ! -f "$ENV_FILE" ]; then
-        warn "No setup-env.sh found. Nothing to clear."
+        warn "No .env found. Nothing to clear."
         echo ""
         return 0
     fi
@@ -231,15 +257,12 @@ cmd_config_clear() {
     fi
 
     cat > "$ENV_FILE" << 'ENVEOF'
-#!/usr/bin/env bash
-export AI_SANDBOX_KEY="${AI_SANDBOX_KEY:-<your-portkey-api-key>}"
-export PORTKEY_MODEL="${PORTKEY_MODEL:-gemini-3.1-pro-preview}"
-export LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-clawkey-local}"
+AI_SANDBOX_KEY=<your-portkey-api-key>
+LITELLM_MASTER_KEY=sk-clawkey-local
 ENVEOF
-    chmod +x "$ENV_FILE"
 
     echo ""
-    ok "API key cleared. Model reset to ${GREEN}gemini-3.1-pro-preview${RESET}."
+    ok "Configuration cleared."
     echo ""
 }
 
@@ -270,8 +293,7 @@ cmd_models_add() {
     echo -e "  ${WHITE}${BOLD}Add Model${RESET}"
     echo ""
 
-    echo -e "  ${DIM}The model name must match what Portkey exposes.${RESET}"
-    echo -e "  ${DIM}Examples: gpt-4o, claude-sonnet-4-20250514, gemini-2.5-flash${RESET}"
+    echo -e "  ${DIM}The model name must match what your institution's AI Sandbox exposes.${RESET}"
     echo ""
     ask "Model name: "
     read -r name

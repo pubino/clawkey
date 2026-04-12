@@ -16,11 +16,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY PROMPT.md run.sh ralph-run.sh portkey-backend.sh clawkey test.sh litellm_config.yaml ralph.yml ./
 COPY tests/ tests/
 
-# Create setup-env.sh placeholder for config tests
-RUN echo '#!/usr/bin/env bash' > setup-env.sh && \
-    echo 'export AI_SANDBOX_KEY="${AI_SANDBOX_KEY:-test-key}"' >> setup-env.sh && \
-    echo 'export PORTKEY_MODEL="${PORTKEY_MODEL:-gemini-3.1-pro-preview}"' >> setup-env.sh && \
-    chmod +x setup-env.sh
+# Create .env placeholder and load-env.sh for config tests
+RUN printf 'AI_SANDBOX_KEY=test-key\nLITELLM_MASTER_KEY=sk-clawkey-local\n' > .env
+COPY load-env.sh .
+RUN chmod +x load-env.sh
 
 RUN chmod +x run.sh ralph-run.sh portkey-backend.sh clawkey test.sh
 

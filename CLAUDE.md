@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Clawkey routes [Claude Code](https://docs.anthropic.com/en/docs/claude-code) through [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) and [Portkey AI Gateway](https://portkey.ai). This enables Claude Code's full interactive agent mode (tool use, file editing, code execution) with any model available in the AI Sandbox (GPT, Gemini, Llama, Mistral).
+Clawkey routes [Claude Code](https://docs.anthropic.com/en/docs/claude-code) through [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) and [Portkey AI Gateway](https://portkey.ai). This enables Claude Code's full interactive agent mode (tool use, file editing, code execution) with any model available in the AI Sandbox.
 
 LiteLLM translates Anthropic tool_use <> OpenAI function_call, which Portkey alone cannot do.
 
@@ -17,7 +17,7 @@ Claude Code CLI -> LiteLLM Proxy (localhost:4040) -> Portkey AI Gateway -> LLM p
                    (Anthropic <> OpenAI translation)   (routing by model name)
 ```
 
-- **litellm_config.yaml**: LiteLLM proxy config — model list with `openai/` prefix routing through Portkey
+- **litellm_config.yaml**: LiteLLM proxy config — model list (managed via `./clawkey models --add`)
 - **run.sh**: Starts LiteLLM proxy, exports env vars (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`), launches `claude`, traps EXIT to stop proxy
 - **clawkey**: Interactive CLI for managing API keys, default model, and model list
 - **clawkey-init.sh**: Bootstraps new projects with all config and scripts
@@ -48,7 +48,7 @@ Clawkey also supports Ralph orchestrator with a swappable backend (`claude` or `
 
 ```bash
 ./run.sh                                          # Interactive, default model
-PORTKEY_MODEL=gemini-3.1-pro-preview ./run.sh     # Override model
+PORTKEY_MODEL=<model-name> ./run.sh                # Override model
 ./run.sh --print "explain this code"              # One-shot
 ```
 
@@ -57,7 +57,7 @@ PORTKEY_MODEL=gemini-3.1-pro-preview ./run.sh     # Override model
 ```bash
 ./ralph-run.sh                                    # Claude Code backend (default)
 CLAWKEY_BACKEND=aider ./ralph-run.sh              # aider backend
-PORTKEY_MODEL=gpt-5-mini ./ralph-run.sh           # Override model
+PORTKEY_MODEL=<model-name> ./ralph-run.sh          # Override model
 ```
 
 ### Testing
@@ -86,10 +86,10 @@ docker build -t clawkey:latest .      # Build test image
 
 ## Environment Variables
 
-Defined in `setup-env.sh` (git-ignored). Template in `.env.example`. Manage with `./clawkey config`.
+Defined in `.env` (git-ignored). Template in `.env.example`. Manage with `./clawkey config`.
 
 - `AI_SANDBOX_KEY`: Portkey API key
-- `PORTKEY_MODEL`: Model selector (default: `gemini-3.1-pro-preview`)
+- `PORTKEY_MODEL`: Model selector (managed via `./clawkey config`)
 - `LITELLM_MASTER_KEY`: LiteLLM proxy auth key (auto-generated if not set)
 - `CLAWKEY_BACKEND`: Ralph backend — `claude` (default) or `aider`
 

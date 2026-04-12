@@ -1,7 +1,9 @@
 """Test Portkey AI Gateway connectivity and Anthropic Messages API translation."""
 
+import os
 import requests
 import pytest
+import yaml
 
 
 def test_portkey_endpoint_reachable(portkey_base_url):
@@ -69,17 +71,25 @@ def test_portkey_messages_api(portkey_api_key, portkey_model):
     assert len(text) > 0, f"Empty response text: {data}"
 
 
-AVAILABLE_MODELS = [
-    "gpt-4o-mini",
-    "gpt-5-mini",
-    "Llama-3.3-70B-Instruct",
-    "mistral-small-2503",
-]
+def _load_available_models():
+    """Read model names from litellm_config.yaml."""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_path = os.path.join(project_root, "litellm_config.yaml")
+    try:
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+        models = [m["model_name"] for m in config.get("model_list", [])]
+        return models if models else []
+    except (FileNotFoundError, KeyError, TypeError):
+        return []
 
 
-@pytest.mark.parametrize("model_name", AVAILABLE_MODELS)
+AVAILABLE_MODELS = _load_available_models()
+
+
+@pytest.mark.parametrize("model_name", AVAILABLE_MODELS if AVAILABLE_MODELS else [pytest.param("none", marks=pytest.mark.skip(reason="No models in litellm_config.yaml"))])
 def test_model_responds(portkey_api_key, portkey_base_url, model_name):
-    """Verify each expected model responds through Portkey."""
+    """Verify each configured model responds through Portkey."""
     url = f"{portkey_base_url}/chat/completions"
     headers = {
         "Authorization": f"Bearer {portkey_api_key}",
