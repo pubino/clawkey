@@ -1,6 +1,6 @@
 # Secrets and environment
 .env
-setup-env.sh
+.env.local
 *.key
 *.pem
 
@@ -12,7 +12,16 @@ __pycache__/
 *.pyc
 .pytest_cache/
 *.egg-info/
+dist/
+build/
 .venv/
+
+# LiteLLM
+/tmp/litellm-clawkey.log
+
+# Ralph
+.ralph/
 
 # OS
 .DS_Store
+Thumbs.db

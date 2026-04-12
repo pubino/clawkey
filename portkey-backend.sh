@@ -8,7 +8,7 @@
 #
 # Required env vars:
 #   CLAWKEY_BACKEND   - "claude" or "aider" (default: claude)
-#   PORTKEY_MODEL     - model name (default: gpt-4o-mini)
+#   PORTKEY_MODEL     - model name (required)
 #
 # Claude mode also requires:
 #   ANTHROPIC_AUTH_TOKEN  - LiteLLM master key
@@ -21,8 +21,13 @@
 set -euo pipefail
 
 BACKEND="${CLAWKEY_BACKEND:-claude}"
-MODEL="${PORTKEY_MODEL:-gemini-3.1-pro-preview}"
+MODEL="${PORTKEY_MODEL:-}"
 PROMPT="$*"
+
+if [ -z "$MODEL" ]; then
+    echo "Error: PORTKEY_MODEL is not set. Run: ./clawkey config"
+    exit 1
+fi
 
 if [ -z "$PROMPT" ]; then
     echo "Error: No prompt provided."

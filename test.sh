@@ -19,8 +19,8 @@ run_local() {
     pip install -q -r requirements.txt
 
     # Load Portkey environment if available
-    if [ -f ./setup-env.sh ]; then
-        source ./setup-env.sh
+    if [ -f ./.env ]; then
+        CLAWKEY_DIR="$(pwd)" source ./load-env.sh
     fi
 
     echo ""

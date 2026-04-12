@@ -13,7 +13,7 @@
 #   ~/Downloads/clawkey/ralph-run.sh                              # claude backend
 #   ~/Downloads/clawkey/ralph-run.sh -C ~/my-project              # specify working dir
 #   CLAWKEY_BACKEND=aider ~/Downloads/clawkey/ralph-run.sh        # aider backend
-#   PORTKEY_MODEL=gemini-3.1-pro-preview ~/Downloads/clawkey/ralph-run.sh
+#   PORTKEY_MODEL=<model-name> ~/Downloads/clawkey/ralph-run.sh
 
 set -euo pipefail
 
@@ -31,17 +31,22 @@ if [ "${1:-}" = "-C" ]; then
 fi
 
 # Load environment
-source "${CLAWKEY_DIR}/setup-env.sh"
+CLAWKEY_DIR="$CLAWKEY_DIR" source "${CLAWKEY_DIR}/load-env.sh"
 
 BACKEND="${CLAWKEY_BACKEND:-claude}"
-MODEL="${PORTKEY_MODEL:-gemini-3.1-pro-preview}"
+MODEL="${PORTKEY_MODEL:-}"
 API_KEY="${AI_SANDBOX_KEY:-}"
 LITELLM_PORT="${LITELLM_PORT:-4040}"
 LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-clawkey-local-$(date +%s)}"
 LITELLM_PID=""
 
+if [ -z "$MODEL" ]; then
+    echo "Error: PORTKEY_MODEL is not set. Run: ./clawkey config"
+    exit 1
+fi
+
 if [ -z "$API_KEY" ]; then
-    echo "Error: AI_SANDBOX_KEY is not set. Run: source setup-env.sh"
+    echo "Error: AI_SANDBOX_KEY is not set. Run: ./clawkey config"
     exit 1
 fi
 

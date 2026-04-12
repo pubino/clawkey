@@ -17,22 +17,20 @@ if [ ! -d .git ]; then
     git init
 fi
 
-# Create setup-env.sh template
-if [ ! -f setup-env.sh ]; then
-    cat > setup-env.sh << 'EOF'
-#!/usr/bin/env bash
-# Source this file to load Portkey credentials.
-# Provided by your institution's AI Sandbox.
-
-export AI_SANDBOX_KEY="${AI_SANDBOX_KEY:-<your-portkey-api-key>}"
-export PORTKEY_MODEL="${PORTKEY_MODEL:-gemini-3.1-pro-preview}"
-export LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-clawkey-local}"
+# Create .env template
+if [ ! -f .env ]; then
+    cat > .env << 'EOF'
+AI_SANDBOX_KEY=<your-portkey-api-key>
+LITELLM_MASTER_KEY=sk-clawkey-local
 EOF
-    chmod +x setup-env.sh
-    echo "Created setup-env.sh — edit it with your AI_SANDBOX_KEY."
+    echo "Created .env"
 else
-    echo "setup-env.sh already exists, skipping."
+    echo ".env already exists, skipping."
 fi
+
+# Copy load-env.sh
+cp "${CLAWKEY_DIR}/load-env.sh" .
+chmod +x load-env.sh
 
 # Copy run.sh, litellm_config.yaml, and Ralph files
 cp "${CLAWKEY_DIR}/run.sh" .
@@ -76,7 +74,6 @@ fi
 if [ ! -f .gitignore ]; then
     cat > .gitignore << 'GITEOF'
 .claude/
-setup-env.sh
 .env
 __pycache__/
 *.pyc
@@ -85,7 +82,7 @@ __pycache__/
 .DS_Store
 GITEOF
 else
-    for pattern in ".claude/" "setup-env.sh" ".env"; do
+    for pattern in ".claude/" ".env"; do
         grep -qxF "$pattern" .gitignore 2>/dev/null || echo "$pattern" >> .gitignore
     done
 fi
@@ -93,9 +90,7 @@ fi
 echo ""
 echo "Clawkey project initialized (LiteLLM + Portkey)."
 echo ""
-echo "  1. Edit setup-env.sh with your AI_SANDBOX_KEY"
-echo "  2. source setup-env.sh"
-echo "  3. pip install litellm[proxy]  (or use Docker)"
-echo "  4. ./run.sh                              # Interactive Claude Code"
-echo "  5. ./ralph-run.sh                        # Ralph + Claude Code backend"
-echo "  6. CLAWKEY_BACKEND=aider ./ralph-run.sh  # Ralph + aider backend"
+echo "  1. ./clawkey models --add     # Add your institution's models"
+echo "  2. ./clawkey config           # Set API key and default model"
+echo "  3. pip install litellm[proxy] # (or use Docker)"
+echo "  4. ./run.sh                   # Interactive Claude Code"

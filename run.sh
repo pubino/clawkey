@@ -10,7 +10,7 @@
 # Usage:
 #   ~/Downloads/clawkey/run.sh                                # default model
 #   ~/Downloads/clawkey/run.sh -C ~/my-project                # specify working dir
-#   PORTKEY_MODEL=gemini-3.1-pro-preview ~/Downloads/clawkey/run.sh
+#   PORTKEY_MODEL=<model-name> ~/Downloads/clawkey/run.sh
 #   ~/Downloads/clawkey/run.sh --print "explain this code"    # one-shot
 
 set -euo pipefail
@@ -29,7 +29,7 @@ if [ "${1:-}" = "-C" ]; then
 fi
 
 # Load environment
-source "${CLAWKEY_DIR}/setup-env.sh"
+CLAWKEY_DIR="$CLAWKEY_DIR" source "${CLAWKEY_DIR}/load-env.sh"
 
 # Activate venv if it exists (litellm is installed there)
 if [ -d "${CLAWKEY_DIR}/.venv" ]; then
@@ -42,15 +42,20 @@ if ! command -v litellm &>/dev/null; then
     exit 1
 fi
 
-MODEL="${PORTKEY_MODEL:-gemini-3.1-pro-preview}"
+MODEL="${PORTKEY_MODEL:-}"
 MAX_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-16384}"
 API_KEY="${AI_SANDBOX_KEY:-}"
 LITELLM_PORT="${LITELLM_PORT:-4040}"
 LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-clawkey-local-$(date +%s)}"
 LITELLM_PID=""
 
+if [ -z "$MODEL" ]; then
+    echo "Error: PORTKEY_MODEL is not set. Run: ./clawkey config"
+    exit 1
+fi
+
 if [ -z "$API_KEY" ]; then
-    echo "Error: AI_SANDBOX_KEY is not set. Run: source setup-env.sh"
+    echo "Error: AI_SANDBOX_KEY is not set. Run: ./clawkey config"
     exit 1
 fi
 

@@ -1,50 +1,11 @@
 # LiteLLM Proxy configuration for Clawkey
 # Routes Claude Code's Anthropic Messages API through LiteLLM to Portkey AI Gateway.
-# LiteLLM translates Anthropic tool_use ↔ OpenAI function_call automatically,
+# LiteLLM translates Anthropic tool_use <> OpenAI function_call automatically,
 # enabling Claude Code's interactive agent mode with non-Claude models.
+#
+# Add models with: ./clawkey models --add
 
-model_list:
-  - model_name: gpt-4o-mini
-    litellm_params:
-      model: openai/gpt-4o-mini
-      api_base: https://api.portkey.ai/v1
-      api_key: "os.environ/AI_SANDBOX_KEY"
-
-  - model_name: gpt-5-mini
-    litellm_params:
-      model: openai/gpt-5-mini
-      api_base: https://api.portkey.ai/v1
-      api_key: "os.environ/AI_SANDBOX_KEY"
-
-  - model_name: gemini-3.1-pro-preview
-    litellm_params:
-      model: openai/gemini-3.1-pro-preview
-      api_base: https://api.portkey.ai/v1
-      api_key: "os.environ/AI_SANDBOX_KEY"
-
-  - model_name: Llama-3.3-70B-Instruct
-    litellm_params:
-      model: openai/Llama-3.3-70B-Instruct
-      api_base: https://api.portkey.ai/v1
-      api_key: "os.environ/AI_SANDBOX_KEY"
-
-  - model_name: Meta-Llama-3-1-8B-Instruct
-    litellm_params:
-      model: openai/Meta-Llama-3-1-8B-Instruct
-      api_base: https://api.portkey.ai/v1
-      api_key: "os.environ/AI_SANDBOX_KEY"
-
-  - model_name: mistral-small-2503
-    litellm_params:
-      model: openai/mistral-small-2503
-      api_base: https://api.portkey.ai/v1
-      api_key: "os.environ/AI_SANDBOX_KEY"
-
-  - model_name: mistral-medium-2505
-    litellm_params:
-      model: openai/mistral-medium-2505
-      api_base: https://api.portkey.ai/v1
-      api_key: "os.environ/AI_SANDBOX_KEY"
+model_list: []
 
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"

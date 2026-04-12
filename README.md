@@ -1,6 +1,6 @@
 # Clawkey
 
-Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in **full interactive agent mode** with any model in the [Portkey AI Gateway](https://portkey.ai) — OpenAI, Google Gemini, Meta Llama, Mistral — using [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) for protocol translation.
+Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in **full interactive agent mode** with any model in the [Portkey AI Gateway](https://portkey.ai) using [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) for protocol translation.
 
 Optionally run the [Ralph](https://github.com/ralph-cli/ralph) orchestrator with a swappable backend: **Claude Code** or **aider**.
 
@@ -15,7 +15,7 @@ LiteLLM Proxy (localhost:4040)
 Portkey AI Gateway (api.portkey.ai)
     |  routes by model name
     |
-LLM Provider (OpenAI, Google, Mistral, Meta/Azure)
+LLM Provider
 ```
 
 Claude Code sends Anthropic Messages API requests with `tool_use` blocks. LiteLLM translates these to OpenAI `/v1/chat/completions` with `function_call`, forwards to Portkey, and translates responses back. This gives Claude Code's full interactive agent — file editing, code execution, tool use — with non-Claude models.
@@ -35,10 +35,13 @@ Optional for Ralph orchestration:
 ## Quick Start
 
 ```bash
-# 1. Configure your API key and model
+# 1. Add your institution's models
+./clawkey models --add
+
+# 2. Configure your API key and default model
 ./clawkey config
 
-# 2. Launch Claude Code
+# 3. Launch Claude Code
 ./run.sh
 ```
 
@@ -78,7 +81,7 @@ Configuration is stored in two files:
 
 | File | Contents | Git-tracked? |
 |------|----------|:---:|
-| `setup-env.sh` | API key, default model | No |
+| `.env` | API key, default model | No |
 | `litellm_config.yaml` | Full model list for LiteLLM proxy | Yes |
 
 ## Use Cases
@@ -88,18 +91,17 @@ Configuration is stored in two files:
 Start Claude Code in your current directory, routed through LiteLLM + Portkey:
 
 ```bash
-# Default model (gemini-3.1-pro-preview or whatever you configured)
+# Default model (whatever you configured via ./clawkey config)
 ./run.sh
 
 # Specify a working directory (-C must be the first argument)
 ~/Downloads/clawkey/run.sh -C ~/my-project
 
 # Override model for this session
-PORTKEY_MODEL=gpt-5-mini ./run.sh
-PORTKEY_MODEL=mistral-medium-2505 ./run.sh
+PORTKEY_MODEL=<model-name> ./run.sh
 
 # Combine -C with model override
-PORTKEY_MODEL=gpt-5-mini ~/Downloads/clawkey/run.sh -C ~/my-project
+PORTKEY_MODEL=<model-name> ~/Downloads/clawkey/run.sh -C ~/my-project
 ```
 
 ### One-shot queries
@@ -141,7 +143,7 @@ When all requirements are met, output: LOOP_COMPLETE
 ~/Downloads/clawkey/ralph-run.sh -C ~/my-project
 
 # Override model
-PORTKEY_MODEL=gpt-5-mini ~/Downloads/clawkey/ralph-run.sh
+PORTKEY_MODEL=<model-name> ~/Downloads/clawkey/ralph-run.sh
 ```
 
 Ralph calls `portkey-backend.sh` which runs `claude --print` through LiteLLM + Portkey.
@@ -154,7 +156,7 @@ Same setup, but aider talks directly to Portkey (no LiteLLM proxy needed):
 CLAWKEY_BACKEND=aider ~/Downloads/clawkey/ralph-run.sh
 
 # With a different model
-CLAWKEY_BACKEND=aider PORTKEY_MODEL=mistral-small-2503 ~/Downloads/clawkey/ralph-run.sh
+CLAWKEY_BACKEND=aider PORTKEY_MODEL=<model-name> ~/Downloads/clawkey/ralph-run.sh
 ```
 
 ### Bootstrap a new project
@@ -167,34 +169,32 @@ cd ~/my-new-project
 ```
 
 This creates:
-- `setup-env.sh` — credential template
+- `.env` — credential placeholder
+- `load-env.sh` — sourceable .env parser
 - `run.sh` — Claude Code launcher
 - `ralph-run.sh` — Ralph launcher
 - `portkey-backend.sh` — Ralph backend wrapper
 - `ralph.yml` — Ralph orchestration config
-- `litellm_config.yaml` — LiteLLM model list
+- `litellm_config.yaml` — LiteLLM model list (empty — run `./clawkey models --add`)
 - `PROMPT.md` — task template with `LOOP_COMPLETE` signal
 - `.gitignore` — excludes secrets and generated files
 
-## Available Models
+## Models
 
-| Provider | Models | Max Output Tokens |
-|----------|--------|------------------:|
-| OpenAI | `gpt-4o-mini`, `gpt-5-mini` | 16384 |
-| Google | `gemini-3.1-pro-preview` | 65536+ |
-| Mistral | `mistral-small-2503`, `mistral-medium-2505` | 32768 |
-| Meta (Azure) | `Llama-3.3-70B-Instruct`, `Meta-Llama-3-1-8B-Instruct` | 4096 |
+Models are managed via the CLI. The model name must match what your institution's AI Sandbox exposes through Portkey.
 
-Add or remove models with `./clawkey models --add` and `./clawkey models --remove`. The model name must match what Portkey exposes for your AI Sandbox.
-
-Llama models have low output limits and may truncate longer responses.
+```bash
+./clawkey models --add      # Add a model
+./clawkey models --remove   # Remove a model
+./clawkey models            # List configured models
+```
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `AI_SANDBOX_KEY` | Portkey API key | *(required)* |
-| `PORTKEY_MODEL` | Model name | `gemini-3.1-pro-preview` |
+| `PORTKEY_MODEL` | Model name | *(required)* |
 | `LITELLM_MASTER_KEY` | LiteLLM proxy auth key | auto-generated |
 | `LITELLM_PORT` | LiteLLM proxy port | `4040` |
 | `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | Max output tokens | `16384` |
