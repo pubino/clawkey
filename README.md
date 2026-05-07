@@ -18,14 +18,16 @@ Portkey AI Gateway (api.portkey.ai)
 LLM Provider
 ```
 
-Claude Code sends Anthropic Messages API requests with `tool_use` blocks. LiteLLM translates these to OpenAI `/v1/chat/completions` with `function_call`, forwards to Portkey, and translates responses back. This gives Claude Code's full interactive agent — file editing, code execution, tool use — with non-Claude models.
+Claude Code sends Anthropic Messages API requests with `tool_use` blocks. LiteLLM translates these to OpenAI `/v1/chat/completions` with `function_call`, forwards to Portkey, and translates responses back.
+
+This gives Claude Code's full interactive agent — file editing, code execution, tool use — with non-Claude models.
 
 **Your existing Claude Code configuration is never modified.** All routing uses process-scoped environment variables (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`) that only affect the spawned session. Your `~/.claude/`, project `.claude/`, and `ANTHROPIC_API_KEY` are untouched.
 
 ## Prerequisites
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`npm install -g @anthropic-ai/claude-code`)
-- Python 3.10+ with `litellm[proxy]` (`pip install 'litellm[proxy]'`)
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
+- Python 3.10+ with `litellm[proxy]`
 - `AI_SANDBOX_KEY` from your institution's AI Sandbox
 
 Optional for Ralph orchestration:
