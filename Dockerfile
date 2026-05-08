@@ -13,7 +13,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project files
-COPY PROMPT.md run.sh ralph-run.sh portkey-backend.sh clawkey test.sh litellm_config.yaml ralph.yml ./
+COPY PROMPT.md portkey-backend.sh clawkey test.sh litellm_config.yaml ralph.yml ./
+COPY lib/ lib/
 COPY tests/ tests/
 
 # Create .env placeholder and load-env.sh for config tests
@@ -21,7 +22,7 @@ RUN printf 'AI_SANDBOX_KEY=test-key\nLITELLM_MASTER_KEY=sk-clawkey-local\n' > .e
 COPY load-env.sh .
 RUN chmod +x load-env.sh
 
-RUN chmod +x run.sh ralph-run.sh portkey-backend.sh clawkey test.sh
+RUN chmod +x portkey-backend.sh clawkey test.sh lib/launchd/run-proxy.sh
 
 # Default: run the test suite
 CMD ["python", "-m", "pytest", "tests/", "-v"]

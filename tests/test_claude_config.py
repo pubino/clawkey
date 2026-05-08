@@ -1,57 +1,75 @@
 """Validate clawkey project structure and LiteLLM + Portkey configuration."""
 
 import os
-import pytest
+import subprocess
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def test_run_script_exists():
-    script = os.path.join(PROJECT_ROOT, "run.sh")
-    assert os.path.exists(script), "run.sh not found"
+def test_clawkey_script_exists():
+    script = os.path.join(PROJECT_ROOT, "clawkey")
+    assert os.path.exists(script), "clawkey CLI script not found"
 
 
-def test_run_script_is_executable():
-    script = os.path.join(PROJECT_ROOT, "run.sh")
-    assert os.access(script, os.X_OK), "run.sh is not executable"
+def test_clawkey_script_is_executable():
+    script = os.path.join(PROJECT_ROOT, "clawkey")
+    assert os.access(script, os.X_OK), "clawkey is not executable"
+
+
+def test_clawkey_run_subcommand_dispatches():
+    """clawkey must define `run` and `ralph` subcommands in its top-level dispatcher."""
+    script = os.path.join(PROJECT_ROOT, "clawkey")
+    with open(script) as f:
+        content = f.read()
+    assert "    run)" in content, "clawkey must dispatch the 'run' subcommand"
+    assert "    ralph)" in content, "clawkey must dispatch the 'ralph' subcommand"
+    assert "    proxy)" in content, "clawkey must dispatch the 'proxy' subcommand"
+
+
+def test_clawkey_help_lists_run_and_proxy():
+    """`clawkey help` must mention `run`, `ralph`, and `proxy` so users discover them."""
+    script = os.path.join(PROJECT_ROOT, "clawkey")
+    out = subprocess.check_output([script, "help"], text=True)
+    assert "clawkey run" in out, "help text must mention 'clawkey run'"
+    assert "clawkey ralph" in out, "help text must mention 'clawkey ralph'"
+    assert "clawkey proxy" in out, "help text must mention 'clawkey proxy'"
+
+
+def test_runtime_library_exists():
+    lib = os.path.join(PROJECT_ROOT, "lib", "clawkey-runtime.sh")
+    assert os.path.exists(lib), "lib/clawkey-runtime.sh not found"
+
+
+def test_runtime_library_exports_anthropic_env():
+    """The runtime library must wire ANTHROPIC_AUTH_TOKEN and ANTHROPIC_BASE_URL."""
+    lib = os.path.join(PROJECT_ROOT, "lib", "clawkey-runtime.sh")
+    with open(lib) as f:
+        content = f.read()
+    assert "ANTHROPIC_AUTH_TOKEN" in content, (
+        "runtime lib must export ANTHROPIC_AUTH_TOKEN for proxy auth"
+    )
+    assert "ANTHROPIC_BASE_URL" in content, (
+        "runtime lib must export ANTHROPIC_BASE_URL pointing at LiteLLM"
+    )
+    assert "unset ANTHROPIC_API_KEY" in content, (
+        "runtime lib must unset ANTHROPIC_API_KEY to avoid key conflicts"
+    )
+
+
+def test_clawkey_does_not_write_settings_json():
+    """clawkey must use env vars only — no settings.json side effects."""
+    for name in ("clawkey", os.path.join("lib", "clawkey-runtime.sh")):
+        path = os.path.join(PROJECT_ROOT, name)
+        with open(path) as f:
+            content = f.read()
+        assert "settings.json" not in content, (
+            f"{name} should not write .claude/settings.json — use env vars"
+        )
 
 
 def test_litellm_config_exists():
     config = os.path.join(PROJECT_ROOT, "litellm_config.yaml")
     assert os.path.exists(config), "litellm_config.yaml not found"
-
-
-def test_env_file_exists():
-    env_file = os.path.join(PROJECT_ROOT, ".env")
-    assert os.path.exists(env_file), ".env not found"
-
-
-def test_load_env_exists():
-    script = os.path.join(PROJECT_ROOT, "load-env.sh")
-    assert os.path.exists(script), "load-env.sh not found"
-
-
-def test_run_script_exports_anthropic_auth_token():
-    """run.sh must export ANTHROPIC_AUTH_TOKEN (not ANTHROPIC_API_KEY)."""
-    script = os.path.join(PROJECT_ROOT, "run.sh")
-    with open(script) as f:
-        content = f.read()
-    assert "ANTHROPIC_AUTH_TOKEN" in content, (
-        "run.sh must export ANTHROPIC_AUTH_TOKEN for proxy auth"
-    )
-    assert "ANTHROPIC_BASE_URL" in content, (
-        "run.sh must export ANTHROPIC_BASE_URL pointing at LiteLLM"
-    )
-
-
-def test_run_script_does_not_write_settings_json():
-    """run.sh should use env vars only — no settings.json side effects."""
-    script = os.path.join(PROJECT_ROOT, "run.sh")
-    with open(script) as f:
-        content = f.read()
-    assert "settings.json" not in content, (
-        "run.sh should not write .claude/settings.json — use env vars for clean switching"
-    )
 
 
 def test_litellm_config_valid():
@@ -66,14 +84,14 @@ def test_litellm_config_valid():
         assert "litellm_params" in model, f"Model entry missing litellm_params: {model}"
 
 
-def test_clawkey_script_exists():
-    script = os.path.join(PROJECT_ROOT, "clawkey")
-    assert os.path.exists(script), "clawkey management script not found"
+def test_env_file_exists():
+    env_file = os.path.join(PROJECT_ROOT, ".env")
+    assert os.path.exists(env_file), ".env not found"
 
 
-def test_clawkey_script_is_executable():
-    script = os.path.join(PROJECT_ROOT, "clawkey")
-    assert os.access(script, os.X_OK), "clawkey is not executable"
+def test_load_env_exists():
+    script = os.path.join(PROJECT_ROOT, "load-env.sh")
+    assert os.path.exists(script), "load-env.sh not found"
 
 
 def test_clawkey_init_does_not_write_settings_json():

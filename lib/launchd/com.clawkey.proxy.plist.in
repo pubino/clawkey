@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Clawkey LiteLLM proxy — user-scope launchd agent.
+  Installed to ~/Library/LaunchAgents/com.clawkey.proxy.plist by `clawkey proxy install`.
+  Domain: gui/$UID. Requires no admin privileges.
+
+  Placeholders (replaced by clawkey proxy install):
+    {{CLAWKEY_DIR}}      absolute path to the clawkey checkout
+    {{LITELLM_PORT}}     port number (default 4040)
+    {{LOG_PATH}}         absolute path to ~/.clawkey/proxy.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.clawkey.proxy</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{CLAWKEY_DIR}}/lib/launchd/run-proxy.sh</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CLAWKEY_DIR</key>
+        <string>{{CLAWKEY_DIR}}</string>
+        <key>LITELLM_PORT</key>
+        <string>{{LITELLM_PORT}}</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>{{CLAWKEY_DIR}}</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>Crashed</key>
+        <true/>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>{{LOG_PATH}}</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{LOG_PATH}}</string>
+</dict>
+</plist>

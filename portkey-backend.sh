@@ -38,9 +38,9 @@ case "$BACKEND" in
     claude)
         # Verify LiteLLM proxy is reachable
         LITELLM_PORT="${LITELLM_PORT:-4040}"
-        if ! curl -sf "http://localhost:${LITELLM_PORT}/health" >/dev/null 2>&1; then
+        if ! curl -sf "http://127.0.0.1:${LITELLM_PORT}/health" >/dev/null 2>&1; then
             echo "Error: LiteLLM proxy not reachable on port ${LITELLM_PORT}."
-            echo "Start it with ralph-run.sh or run.sh first."
+            echo "Start it with: clawkey proxy start  (or run: clawkey ralph)"
             exit 1
         fi
 

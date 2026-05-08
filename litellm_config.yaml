@@ -5,7 +5,12 @@
 #
 # Add models with: ./clawkey models --add
 
-model_list: []
+model_list:
+  - model_name: claude-opus-4-7
+    litellm_params:
+      model: openai/claude-opus-4-7
+      api_base: https://api.portkey.ai/v1
+      api_key: os.environ/AI_SANDBOX_KEY
 
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"

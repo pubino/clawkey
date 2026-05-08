@@ -1,15 +1,27 @@
 #!/usr/bin/env bash
-# clawkey — Manage Clawkey configuration, API keys, and model list.
+# clawkey — single CLI for managing config and running Claude Code / Ralph
+# routed through LiteLLM Proxy → Portkey AI Gateway.
 #
-# Usage:
-#   clawkey                  Interactive menu
-#   clawkey status           Show current configuration
-#   clawkey config           Configure API key and default model
-#   clawkey config --clear   Clear API key and reset defaults
-#   clawkey models           List configured models
-#   clawkey models --add     Add a model
-#   clawkey models --remove  Remove a model
-#   clawkey help             Show help
+# Config:
+#   clawkey                       Interactive menu
+#   clawkey status                Show current configuration
+#   clawkey config                Configure API key and default model
+#   clawkey config --clear        Clear API key and reset defaults
+#   clawkey models                List configured models
+#   clawkey models --add          Add a model
+#   clawkey models --remove       Remove a model
+#
+# Run:
+#   clawkey run [-C dir] [args]   Launch Claude Code via the proxy
+#   clawkey ralph [-C dir] [args] Launch Ralph orchestrator via the proxy
+#
+# Persistent proxy (macOS):
+#   clawkey proxy install         Install user-scope launchd agent (no sudo)
+#   clawkey proxy uninstall       Remove the agent
+#   clawkey proxy start|stop      Control the agent
+#   clawkey proxy reload          Apply config / model changes
+#   clawkey proxy status          Show install + health
+#   clawkey proxy logs            Tail ~/.clawkey/proxy.log
 
 set -euo pipefail
 
@@ -17,10 +29,9 @@ CLAWKEY_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_FILE="${CLAWKEY_DIR}/litellm_config.yaml"
 ENV_FILE="${CLAWKEY_DIR}/.env"
 
-# Activate venv if it exists (for pyyaml access)
-if [ -d "${CLAWKEY_DIR}/.venv" ]; then
-    source "${CLAWKEY_DIR}/.venv/bin/activate"
-fi
+# Shared runtime helpers (proxy lifecycle, env wiring, launchd integration).
+# shellcheck source=lib/clawkey-runtime.sh
+. "${CLAWKEY_DIR}/lib/clawkey-runtime.sh"
 
 # ── Colors ──────────────────────────────────────────────────────────
 
@@ -67,14 +78,38 @@ get_model() {
     fi
 }
 
+get_master_key() {
+    if [ -f "$ENV_FILE" ]; then
+        grep -m1 '^LITELLM_MASTER_KEY=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true
+    fi
+}
+
+# Random per-install key for the LiteLLM proxy. Loopback-bound so this only
+# protects against same-machine processes guessing the key, but a random value
+# is materially better than the predictable legacy default.
+gen_master_key() {
+    echo "sk-clawkey-$(openssl rand -hex 24)"
+}
+
+# Return the existing master key if one is set and isn't the legacy default;
+# otherwise mint a fresh one.
+ensure_master_key() {
+    local k
+    k=$(get_master_key)
+    if [ -z "$k" ] || [ "$k" = "sk-clawkey-local" ]; then
+        gen_master_key
+    else
+        echo "$k"
+    fi
+}
+
 list_models() {
-    python3 -c "
-import yaml
-with open('${CONFIG_FILE}') as f:
-    config = yaml.safe_load(f)
-for m in config.get('model_list', []):
-    print(m['model_name'])
-" 2>/dev/null || true
+    [ -f "$CONFIG_FILE" ] || return 0
+    awk '/^[[:space:]]*-[[:space:]]+model_name:[[:space:]]+/ {
+        sub(/^[[:space:]]*-[[:space:]]+model_name:[[:space:]]+/, "")
+        sub(/[[:space:]]+$/, "")
+        print
+    }' "$CONFIG_FILE"
 }
 
 model_count() {
@@ -151,6 +186,12 @@ cmd_config() {
     key=$(get_api_key)
     local model
     model=$(get_model)
+    local master_key
+    master_key=$(ensure_master_key)
+    local rotated_master_key=0
+    if [ "$master_key" != "$(get_master_key)" ]; then
+        rotated_master_key=1
+    fi
 
     # ── API Key ──
     if [ -n "$key" ] && [ "$key" != "<your-portkey-api-key>" ]; then
@@ -188,11 +229,18 @@ cmd_config() {
         # Still save the API key
         cat > "$ENV_FILE" << ENVEOF
 AI_SANDBOX_KEY=${key}
-LITELLM_MASTER_KEY=sk-clawkey-local
+LITELLM_MASTER_KEY=${master_key}
 ENVEOF
         divider
         ok "Saved API key to .env"
         ok "API key      ${GREEN}$(mask_key "$key")${RESET}"
+        if [ "$rotated_master_key" = "1" ]; then
+            ok "Proxy key    ${GREEN}rotated${RESET}  ${DIM}$(mask_key "$master_key")${RESET}"
+        fi
+        if clawkey_proxy_loaded; then
+            clawkey_proxy_reload_if_loaded
+            ok "Persistent proxy reloaded."
+        fi
         echo ""
         return 0
     fi
@@ -212,12 +260,12 @@ ENVEOF
         cat > "$ENV_FILE" << ENVEOF
 AI_SANDBOX_KEY=${key}
 PORTKEY_MODEL=${model}
-LITELLM_MASTER_KEY=sk-clawkey-local
+LITELLM_MASTER_KEY=${master_key}
 ENVEOF
     else
         cat > "$ENV_FILE" << ENVEOF
 AI_SANDBOX_KEY=${key}
-LITELLM_MASTER_KEY=sk-clawkey-local
+LITELLM_MASTER_KEY=${master_key}
 ENVEOF
     fi
 
@@ -227,6 +275,13 @@ ENVEOF
     ok "API key      ${GREEN}$(mask_key "$key")${RESET}"
     if [ -n "$model" ]; then
         ok "Model        ${GREEN}${model}${RESET}"
+    fi
+    if [ "$rotated_master_key" = "1" ]; then
+        ok "Proxy key    ${GREEN}rotated${RESET}  ${DIM}$(mask_key "$master_key")${RESET}"
+    fi
+    if clawkey_proxy_loaded; then
+        clawkey_proxy_reload_if_loaded
+        ok "Persistent proxy reloaded."
     fi
     echo ""
 }
@@ -256,13 +311,20 @@ cmd_config_clear() {
         return 0
     fi
 
-    cat > "$ENV_FILE" << 'ENVEOF'
+    local fresh_master_key
+    fresh_master_key=$(gen_master_key)
+    cat > "$ENV_FILE" << ENVEOF
 AI_SANDBOX_KEY=<your-portkey-api-key>
-LITELLM_MASTER_KEY=sk-clawkey-local
+LITELLM_MASTER_KEY=${fresh_master_key}
 ENVEOF
 
     echo ""
     ok "Configuration cleared."
+    ok "Proxy key    ${GREEN}rotated${RESET}  ${DIM}$(mask_key "$fresh_master_key")${RESET}"
+    if clawkey_proxy_loaded; then
+        clawkey_proxy_reload_if_loaded
+        ok "Persistent proxy reloaded."
+    fi
     echo ""
 }
 
@@ -309,26 +371,66 @@ cmd_models_add() {
         return 0
     fi
 
-    python3 << PYEOF
-import yaml
+    CLAWKEY_CONFIG="$CONFIG_FILE" CLAWKEY_MODEL="$name" python3 << 'PYEOF'
+import os, re, sys
 
-with open('${CONFIG_FILE}') as f:
-    config = yaml.safe_load(f)
+path = os.environ['CLAWKEY_CONFIG']
+name = os.environ['CLAWKEY_MODEL']
 
-config['model_list'].append({
-    'model_name': '${name}',
-    'litellm_params': {
-        'model': 'openai/${name}',
-        'api_base': 'https://api.portkey.ai/v1',
-        'api_key': 'os.environ/AI_SANDBOX_KEY'
-    }
-})
+with open(path) as f:
+    content = f.read()
 
-with open('${CONFIG_FILE}', 'w') as f:
-    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+entry = (
+    f"  - model_name: {name}\n"
+    f"    litellm_params:\n"
+    f"      model: openai/{name}\n"
+    f"      api_base: https://api.portkey.ai/v1\n"
+    f"      api_key: os.environ/AI_SANDBOX_KEY\n"
+)
+
+# Case A: empty inline list — replace `model_list: []` with the block form.
+# Use [ \t]* (not \s*) so the regex can't eat across newlines and clobber the
+# blank line that separates model_list from general_settings.
+if re.search(r'(?m)^model_list:[ \t]*\[[ \t]*\][ \t]*$', content):
+    content = re.sub(
+        r'(?m)^model_list:[ \t]*\[[ \t]*\][ \t]*$',
+        'model_list:\n' + entry.rstrip('\n'),
+        content,
+        count=1,
+    )
+else:
+    # Case B: block form. Insert the new entry at the end of the model_list block,
+    # i.e. just before the next top-level key (column-0 non-blank, non-comment) or EOF.
+    lines = content.splitlines(keepends=True)
+    in_block = False
+    insert_at = len(lines)
+    for i, ln in enumerate(lines):
+        if not in_block:
+            if re.match(r'^model_list:\s*$', ln):
+                in_block = True
+                insert_at = i + 1
+            continue
+        # Block ends at first column-0 token that isn't blank. Leave insert_at
+        # where it was (one past the last non-blank entry line) so we don't
+        # consume the blank line that visually separates sections.
+        if ln and not ln[0].isspace() and ln.strip():
+            break
+        if ln.strip():
+            insert_at = i + 1
+    if not in_block:
+        sys.exit("clawkey: could not locate `model_list:` in config")
+    lines.insert(insert_at, entry)
+    content = ''.join(lines)
+
+with open(path, 'w') as f:
+    f.write(content)
 PYEOF
 
     ok "Added: ${GREEN}${name}${RESET}"
+    if clawkey_proxy_loaded; then
+        clawkey_proxy_reload_if_loaded
+        ok "Persistent proxy reloaded."
+    fi
     echo ""
 }
 
@@ -375,19 +477,58 @@ cmd_models_remove() {
         return 0
     fi
 
-    python3 << PYEOF
-import yaml
+    CLAWKEY_CONFIG="$CONFIG_FILE" CLAWKEY_MODEL="$name" python3 << 'PYEOF'
+import os, re
 
-with open('${CONFIG_FILE}') as f:
-    config = yaml.safe_load(f)
+path = os.environ['CLAWKEY_CONFIG']
+target = os.environ['CLAWKEY_MODEL']
 
-config['model_list'] = [m for m in config['model_list'] if m['model_name'] != '${name}']
+with open(path) as f:
+    lines = f.read().splitlines(keepends=True)
 
-with open('${CONFIG_FILE}', 'w') as f:
-    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+header = re.compile(r'^\s*-\s+model_name:\s+(.+?)\s*$')
+out = []
+i = 0
+while i < len(lines):
+    m = header.match(lines[i])
+    if m and m.group(1) == target:
+        # Skip the header and all subsequent body lines (indented at least 4 spaces).
+        i += 1
+        while i < len(lines) and lines[i].startswith('    '):
+            i += 1
+        continue
+    out.append(lines[i])
+    i += 1
+
+content = ''.join(out)
+
+# If model_list is now empty (no `  -` entries follow the header), restore the
+# inline empty-list form so the YAML is still valid.
+def _has_entries(text):
+    in_block = False
+    for ln in text.splitlines():
+        if not in_block:
+            if re.match(r'^model_list:\s*$', ln):
+                in_block = True
+            continue
+        if ln and not ln[:1].isspace() and ln.strip():
+            return False
+        if header.match(ln):
+            return True
+    return False
+
+if not _has_entries(content):
+    content = re.sub(r'(?m)^model_list:[ \t]*$', 'model_list: []', content, count=1)
+
+with open(path, 'w') as f:
+    f.write(content)
 PYEOF
 
     ok "Removed: ${RED}${name}${RESET}"
+    if clawkey_proxy_loaded; then
+        clawkey_proxy_reload_if_loaded
+        ok "Persistent proxy reloaded."
+    fi
 
     local current_model
     current_model=$(get_model)
@@ -395,6 +536,314 @@ PYEOF
         warn "That was the default model. Run ${CYAN}clawkey config${RESET} to pick a new one."
     fi
     echo ""
+}
+
+# ── Run subcommands ─────────────────────────────────────────────────
+#
+# Both `run` and `ralph` follow the same shape:
+#   1. Optional -C <dir> shifts off argv.
+#   2. Load .env, validate required vars.
+#   3. Ensure the proxy is reachable: reuse persistent (launchd) → ephemeral fallback.
+#   4. exec into the target tool from the caller's directory.
+
+# Resolve `-C <dir>` if present. Side-effects: sets _caller_dir, sets _argv to
+# whatever remains after the flag was consumed. Caller passes "$@".
+_resolve_caller_dir_and_args() {
+    _caller_dir="$(pwd)"
+    _argv=("$@")
+    if [ "${_argv[0]:-}" = "-C" ]; then
+        if [ -z "${_argv[1]:-}" ]; then
+            err "-C requires a directory argument."
+            return 1
+        fi
+        _caller_dir="$(cd "${_argv[1]}" && pwd)"
+        _argv=("${_argv[@]:2}")
+    fi
+}
+
+# Common preamble for `run` and `ralph` claude-mode: load env, mint master key
+# if missing, ensure proxy is reachable, set ANTHROPIC env vars.
+# Returns 0 on success, non-zero with a printed error otherwise.
+_ensure_proxy_for_run() {
+    clawkey_load_env || return 1
+    clawkey_require_env AI_SANDBOX_KEY PORTKEY_MODEL || return 1
+
+    if [ -z "${LITELLM_MASTER_KEY:-}" ]; then
+        # Should not normally happen — clawkey config writes one. Mint a fresh one
+        # so the run still works, but warn the user that it won't survive restart.
+        export LITELLM_MASTER_KEY="$(gen_master_key)"
+        warn "LITELLM_MASTER_KEY missing from .env; using a session-only key."
+    fi
+
+    if clawkey_proxy_running; then
+        return 0
+    fi
+
+    if clawkey_proxy_loaded; then
+        # Daemon is loaded but /health didn't answer — give it a kick and a moment.
+        launchctl kickstart "gui/$(id -u)/${CLAWKEY_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+        local i
+        for i in $(seq 1 10); do
+            clawkey_proxy_running && return 0
+            sleep 1
+        done
+        err "Persistent proxy is loaded but not responding. Check: clawkey proxy logs"
+        return 1
+    fi
+
+    # Ephemeral fallback: spawn a child proxy and trap EXIT to clean up.
+    clawkey_require_litellm || return 1
+    trap clawkey_proxy_stop_ephemeral EXIT
+    clawkey_proxy_start_ephemeral
+    clawkey_proxy_wait_ready
+}
+
+cmd_run() {
+    _resolve_caller_dir_and_args "$@" || return 1
+    _ensure_proxy_for_run || return 1
+    clawkey_export_anthropic_env
+    export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-16384}"
+
+    if ! command -v claude &>/dev/null; then
+        err "claude not found. Install: npm install -g @anthropic-ai/claude-code"
+        return 1
+    fi
+
+    echo ""
+    echo "Starting Claude Code via LiteLLM + Portkey..."
+    echo "  Model:      ${PORTKEY_MODEL}"
+    echo "  Max tokens: ${CLAUDE_CODE_MAX_OUTPUT_TOKENS}"
+    echo "  Proxy:      http://127.0.0.1:${LITELLM_PORT:-4040}"
+    echo "  Gateway:    https://api.portkey.ai"
+    echo "  Directory:  ${_caller_dir}"
+    echo ""
+
+    cd "$_caller_dir"
+    claude --model "$PORTKEY_MODEL" ${_argv[@]+"${_argv[@]}"}
+}
+
+cmd_ralph() {
+    _resolve_caller_dir_and_args "$@" || return 1
+
+    clawkey_load_env || return 1
+    clawkey_require_env AI_SANDBOX_KEY PORTKEY_MODEL || return 1
+
+    if ! command -v ralph &>/dev/null; then
+        err "ralph not found. Install Ralph orchestrator first."
+        return 1
+    fi
+
+    local ralph_config
+    if [ -f "${_caller_dir}/ralph.yml" ]; then
+        ralph_config="${_caller_dir}/ralph.yml"
+    elif [ -f "${CLAWKEY_DIR}/ralph.yml" ]; then
+        ralph_config="${CLAWKEY_DIR}/ralph.yml"
+    else
+        err "ralph.yml not found in ${_caller_dir} or ${CLAWKEY_DIR}"
+        return 1
+    fi
+
+    local backend="${CLAWKEY_BACKEND:-claude}"
+    export AI_SANDBOX_KEY CLAWKEY_BACKEND="$backend" PORTKEY_MODEL
+
+    case "$backend" in
+        claude)
+            _ensure_proxy_for_run || return 1
+            clawkey_export_anthropic_env
+            ;;
+        aider)
+            # Aider talks to Portkey directly — no proxy needed.
+            export OPENAI_API_KEY="$AI_SANDBOX_KEY"
+            export OPENAI_BASE_URL="https://api.portkey.ai/v1"
+            if ! command -v aider &>/dev/null; then
+                err "aider not found. Install: pip install aider-chat"
+                return 1
+            fi
+            ;;
+        *)
+            err "Unknown backend '${backend}'. Use 'claude' or 'aider'."
+            return 1
+            ;;
+    esac
+
+    echo ""
+    echo "Starting Ralph with ${backend} backend..."
+    echo "  Backend:   ${backend}"
+    echo "  Model:     ${PORTKEY_MODEL}"
+    echo "  Config:    ${ralph_config}"
+    if [ "$backend" = "claude" ]; then
+        echo "  Proxy:     http://127.0.0.1:${LITELLM_PORT:-4040}"
+    fi
+    echo "  Gateway:   https://api.portkey.ai"
+    echo "  Directory: ${_caller_dir}"
+    echo ""
+
+    cd "$_caller_dir"
+    ralph run -c "$ralph_config" -a ${_argv[@]+"${_argv[@]}"}
+}
+
+# ── Proxy subcommand (macOS launchd, user scope) ────────────────────
+
+# Render the plist template with current paths into ~/Library/LaunchAgents/.
+_render_plist() {
+    local port="${LITELLM_PORT:-4040}"
+    local template="${CLAWKEY_DIR}/lib/launchd/com.clawkey.proxy.plist.in"
+    if [ ! -f "$template" ]; then
+        err "Plist template missing: ${template}"
+        return 1
+    fi
+    mkdir -p "$(dirname "$CLAWKEY_LAUNCHD_PLIST")"
+    sed \
+        -e "s|{{CLAWKEY_DIR}}|${CLAWKEY_DIR}|g" \
+        -e "s|{{LITELLM_PORT}}|${port}|g" \
+        -e "s|{{LOG_PATH}}|${CLAWKEY_PROXY_LOG}|g" \
+        "$template" > "$CLAWKEY_LAUNCHD_PLIST"
+}
+
+cmd_proxy_install() {
+    banner
+    echo -e "  ${WHITE}${BOLD}Install persistent proxy${RESET}"
+    echo ""
+
+    if [ "$(uname -s)" != "Darwin" ]; then
+        err "clawkey proxy install requires macOS (launchd)."
+        echo "  On Linux, the ephemeral fallback runs the proxy per-session."
+        return 1
+    fi
+
+    clawkey_state_dir_init
+    : > "$CLAWKEY_PROXY_LOG"
+
+    if clawkey_proxy_loaded; then
+        info "Existing agent found — reloading to pick up new config."
+        launchctl bootout "gui/$(id -u)/${CLAWKEY_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+    fi
+
+    _render_plist || return 1
+
+    if launchctl bootstrap "gui/$(id -u)" "$CLAWKEY_LAUNCHD_PLIST"; then
+        ok "Loaded ${GREEN}${CLAWKEY_LAUNCHD_LABEL}${RESET} into gui/$(id -u)"
+    else
+        err "launchctl bootstrap failed."
+        return 1
+    fi
+
+    # Wait briefly for the daemon to come up.
+    local i
+    for i in $(seq 1 10); do
+        clawkey_proxy_running && break
+        sleep 1
+    done
+
+    cmd_proxy_status
+}
+
+cmd_proxy_uninstall() {
+    banner
+    echo -e "  ${WHITE}${BOLD}Uninstall persistent proxy${RESET}"
+    echo ""
+
+    if [ "$(uname -s)" != "Darwin" ]; then
+        warn "Not on macOS — nothing to uninstall."
+        return 0
+    fi
+
+    if clawkey_proxy_loaded; then
+        launchctl bootout "gui/$(id -u)/${CLAWKEY_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+        ok "Unloaded ${CLAWKEY_LAUNCHD_LABEL}"
+    else
+        info "Agent was not loaded."
+    fi
+
+    if [ -f "$CLAWKEY_LAUNCHD_PLIST" ]; then
+        rm -f "$CLAWKEY_LAUNCHD_PLIST"
+        ok "Removed ${CLAWKEY_LAUNCHD_PLIST}"
+    else
+        info "No plist at ${CLAWKEY_LAUNCHD_PLIST}."
+    fi
+    echo ""
+}
+
+cmd_proxy_start() {
+    if ! clawkey_proxy_loaded; then
+        err "Agent not installed. Run: clawkey proxy install"
+        return 1
+    fi
+    launchctl kickstart "gui/$(id -u)/${CLAWKEY_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+    ok "Kickstarted ${CLAWKEY_LAUNCHD_LABEL}"
+}
+
+cmd_proxy_stop() {
+    if ! clawkey_proxy_loaded; then
+        info "Agent not installed."
+        return 0
+    fi
+    launchctl kill SIGTERM "gui/$(id -u)/${CLAWKEY_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+    ok "Sent SIGTERM to ${CLAWKEY_LAUNCHD_LABEL}"
+}
+
+cmd_proxy_reload() {
+    if ! clawkey_proxy_loaded; then
+        err "Agent not installed. Run: clawkey proxy install"
+        return 1
+    fi
+    launchctl kickstart -k "gui/$(id -u)/${CLAWKEY_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+    ok "Reloaded ${CLAWKEY_LAUNCHD_LABEL}"
+}
+
+cmd_proxy_status() {
+    banner
+    echo -e "  ${WHITE}${BOLD}Proxy status${RESET}"
+    echo ""
+
+    if [ "$(uname -s)" != "Darwin" ]; then
+        info "Platform: $(uname -s) — persistent proxy is macOS-only."
+        echo ""
+        return 0
+    fi
+
+    if [ -f "$CLAWKEY_LAUNCHD_PLIST" ]; then
+        ok "Plist        ${GREEN}${CLAWKEY_LAUNCHD_PLIST}${RESET}"
+    else
+        warn "Plist        ${YELLOW}not installed${RESET}  ${DIM}Run: clawkey proxy install${RESET}"
+    fi
+
+    if clawkey_proxy_loaded; then
+        ok "launchd      ${GREEN}loaded${RESET}  ${DIM}gui/$(id -u)/${CLAWKEY_LAUNCHD_LABEL}${RESET}"
+    else
+        warn "launchd      ${YELLOW}not loaded${RESET}"
+    fi
+
+    # Try health probe with the master key from .env if available.
+    local saved_key="${LITELLM_MASTER_KEY:-}"
+    if [ -z "$saved_key" ] && [ -f "$ENV_FILE" ]; then
+        export LITELLM_MASTER_KEY="$(get_master_key)"
+    fi
+    if clawkey_proxy_running; then
+        ok "Health       ${GREEN}responding${RESET}  ${DIM}http://127.0.0.1:${LITELLM_PORT:-4040}/health${RESET}"
+    else
+        warn "Health       ${YELLOW}unreachable${RESET}"
+    fi
+    [ -z "$saved_key" ] && unset LITELLM_MASTER_KEY 2>/dev/null || true
+
+    local mk
+    mk=$(get_master_key)
+    if [ -n "$mk" ]; then
+        ok "Master key   ${GREEN}$(mask_key "$mk")${RESET}"
+    else
+        warn "Master key   ${YELLOW}not configured${RESET}"
+    fi
+
+    ok "Log          ${GREEN}${CLAWKEY_PROXY_LOG}${RESET}"
+    echo ""
+}
+
+cmd_proxy_logs() {
+    if [ ! -f "$CLAWKEY_PROXY_LOG" ]; then
+        warn "No log file at ${CLAWKEY_PROXY_LOG} yet."
+        return 0
+    fi
+    exec tail -F "$CLAWKEY_PROXY_LOG"
 }
 
 # ── Interactive Menu ────────────────────────────────────────────────
@@ -451,23 +900,54 @@ case "${1:-}" in
             *)        cmd_models ;;
         esac
         ;;
+    run)
+        shift
+        cmd_run "$@"
+        ;;
+    ralph)
+        shift
+        cmd_ralph "$@"
+        ;;
+    proxy)
+        case "${2:-status}" in
+            install)   cmd_proxy_install ;;
+            uninstall) cmd_proxy_uninstall ;;
+            start)     cmd_proxy_start ;;
+            stop)      cmd_proxy_stop ;;
+            reload)    cmd_proxy_reload ;;
+            status)    cmd_proxy_status ;;
+            logs)      cmd_proxy_logs ;;
+            *)
+                err "Unknown proxy subcommand: ${2:-}"
+                echo "  Run 'clawkey help' for usage."
+                exit 1
+                ;;
+        esac
+        ;;
     help|--help|-h)
         echo ""
-        echo -e "${WHITE}${BOLD}clawkey${RESET} — Manage Clawkey configuration and models"
+        echo -e "${WHITE}${BOLD}clawkey${RESET} — Claude Code + Ralph routed through LiteLLM + Portkey"
         echo ""
-        echo -e "${DIM}Usage:${RESET}"
-        echo "  clawkey                  Interactive menu"
-        echo "  clawkey status           Show current configuration"
-        echo "  clawkey config           Configure API key and default model"
-        echo "  clawkey config --clear   Clear API key and reset to defaults"
-        echo "  clawkey models           List configured models"
-        echo "  clawkey models --add     Add a model to litellm_config.yaml"
-        echo "  clawkey models --remove  Remove a model from litellm_config.yaml"
-        echo "  clawkey help             Show this help"
+        echo -e "${DIM}Configuration:${RESET}"
+        echo "  clawkey                       Interactive menu"
+        echo "  clawkey status                Show current configuration"
+        echo "  clawkey config                Configure API key and default model"
+        echo "  clawkey config --clear        Clear API key and reset defaults"
+        echo "  clawkey models                List configured models"
+        echo "  clawkey models --add          Add a model"
+        echo "  clawkey models --remove       Remove a model"
         echo ""
-        echo -e "${DIM}Run scripts:${RESET}"
-        echo "  ./run.sh                 Interactive Claude Code via LiteLLM + Portkey"
-        echo "  ./ralph-run.sh           Ralph orchestrator (reads PROMPT.md)"
+        echo -e "${DIM}Run:${RESET}"
+        echo "  clawkey run [-C dir] [args]   Launch Claude Code via the proxy"
+        echo "  clawkey ralph [-C dir] [args] Launch Ralph orchestrator via the proxy"
+        echo ""
+        echo -e "${DIM}Persistent proxy (macOS, no sudo):${RESET}"
+        echo "  clawkey proxy install         Install user-scope launchd agent"
+        echo "  clawkey proxy uninstall       Remove the agent"
+        echo "  clawkey proxy start|stop      Control the agent"
+        echo "  clawkey proxy reload          Apply config / model changes"
+        echo "  clawkey proxy status          Show install + health"
+        echo "  clawkey proxy logs            Tail ~/.clawkey/proxy.log"
         echo ""
         ;;
     "")
