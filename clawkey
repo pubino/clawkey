@@ -25,7 +25,19 @@
 
 set -euo pipefail
 
-CLAWKEY_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Resolve $0 through any symlink chain so CLAWKEY_DIR is the real install dir
+# (not the bin dir of the symlink). Critical when installed via install.sh,
+# which symlinks ~/.local/bin/clawkey -> $XDG_DATA_HOME/clawkey/clawkey.
+_clawkey_self="$0"
+while [ -L "$_clawkey_self" ]; do
+    _link_target="$(readlink "$_clawkey_self")"
+    case "$_link_target" in
+        /*) _clawkey_self="$_link_target" ;;
+        *)  _clawkey_self="$(cd "$(dirname "$_clawkey_self")" && pwd)/$_link_target" ;;
+    esac
+done
+CLAWKEY_DIR="$(cd "$(dirname "$_clawkey_self")" && pwd)"
+unset _clawkey_self _link_target
 
 # Shared runtime helpers + XDG path constants.
 # shellcheck source=lib/clawkey-runtime.sh
