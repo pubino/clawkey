@@ -3,8 +3,17 @@ name: Tests
 on:
   push:
     branches: ['**']
+    # Doc-only changes don't affect runtime behavior; skip CI for them.
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
 
 jobs:
   test:
@@ -16,7 +25,7 @@ jobs:
       # Hit: ~5s. Miss (compile from source): ~60s.
       - name: Cache bash 3.2
         id: cache-bash3
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /opt/bash3
           key: bash-3.2.57-ubuntu-latest
