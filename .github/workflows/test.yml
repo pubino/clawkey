@@ -14,6 +14,10 @@ on:
       - '**.md'
       - 'LICENSE'
       - '.gitignore'
+  # Allow manual reruns from the Actions UI / `gh workflow run` — useful for
+  # exercising the e2e job without pushing a code change (e.g. after rotating
+  # the AI_SANDBOX_KEY secret).
+  workflow_dispatch:
 
 jobs:
   test:
