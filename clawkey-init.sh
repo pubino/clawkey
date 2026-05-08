@@ -17,34 +17,37 @@ if [ ! -d .git ]; then
     git init
 fi
 
-# Create .env template
+# Create .env template. LITELLM_MASTER_KEY is intentionally omitted — running
+# `./clawkey config` will mint a random one on first use.
 if [ ! -f .env ]; then
     cat > .env << 'EOF'
 AI_SANDBOX_KEY=<your-portkey-api-key>
-LITELLM_MASTER_KEY=sk-clawkey-local
 EOF
     echo "Created .env"
 else
     echo ".env already exists, skipping."
 fi
 
-# Copy load-env.sh
+# Copy clawkey itself so `./clawkey run` works in the new project.
+cp "${CLAWKEY_DIR}/clawkey" .
+chmod +x clawkey
+
+# Shared runtime library + launchd template (used by `clawkey run`,
+# `clawkey ralph`, `clawkey proxy *`).
+cp -R "${CLAWKEY_DIR}/lib" .
+chmod +x lib/launchd/run-proxy.sh
+
+# Optional helper still useful for debugging shells.
 cp "${CLAWKEY_DIR}/load-env.sh" .
 chmod +x load-env.sh
 
-# Copy run.sh, litellm_config.yaml, and Ralph files
-cp "${CLAWKEY_DIR}/run.sh" .
-chmod +x run.sh
-
+# Configs.
 cp "${CLAWKEY_DIR}/litellm_config.yaml" .
+cp "${CLAWKEY_DIR}/ralph.yml" .
 
+# Ralph backend wrapper (called by ralph from ralph.yml).
 cp "${CLAWKEY_DIR}/portkey-backend.sh" .
 chmod +x portkey-backend.sh
-
-cp "${CLAWKEY_DIR}/ralph-run.sh" .
-chmod +x ralph-run.sh
-
-cp "${CLAWKEY_DIR}/ralph.yml" .
 
 # Create a starter PROMPT.md if one doesn't exist
 if [ ! -f PROMPT.md ]; then
@@ -90,7 +93,10 @@ fi
 echo ""
 echo "Clawkey project initialized (LiteLLM + Portkey)."
 echo ""
-echo "  1. ./clawkey models --add     # Add your institution's models"
-echo "  2. ./clawkey config           # Set API key and default model"
-echo "  3. pip install litellm[proxy] # (or use Docker)"
-echo "  4. ./run.sh                   # Interactive Claude Code"
+echo "  1. ./clawkey models --add        # Add your institution's models"
+echo "  2. ./clawkey config              # Set API key and default model"
+echo "  3. pip install 'litellm[proxy]'  # (or use Docker)"
+echo "  4. ./clawkey proxy install       # macOS: persistent proxy, no sudo (optional)"
+echo "  5. ./clawkey run                 # Interactive Claude Code"
+echo ""
+echo "Tip: alias ck=\"\$PWD/clawkey\" — then use 'ck run', 'ck ralph', etc."

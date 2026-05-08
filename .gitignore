@@ -6,6 +6,7 @@
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # Python
 __pycache__/
@@ -15,9 +16,6 @@ __pycache__/
 dist/
 build/
 .venv/
-
-# LiteLLM
-/tmp/litellm-clawkey.log
 
 # Ralph
 .ralph/

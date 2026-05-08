@@ -1,7 +1,6 @@
 """Validate Ralph orchestration config and swappable backend setup."""
 
 import os
-import pytest
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -84,11 +83,29 @@ def test_prompt_has_loop_complete():
     )
 
 
-def test_ralph_run_script_exists():
-    path = os.path.join(PROJECT_ROOT, "ralph-run.sh")
-    assert os.path.exists(path), "ralph-run.sh not found"
+def test_clawkey_ralph_subcommand_resolves_ralph_yml():
+    """The clawkey ralph subcommand must look for ralph.yml in caller dir then CLAWKEY_DIR."""
+    script = os.path.join(PROJECT_ROOT, "clawkey")
+    with open(script) as f:
+        content = f.read()
+    assert "cmd_ralph" in content, "clawkey must define cmd_ralph"
+    # caller dir → CLAWKEY_DIR fallback
+    assert "_caller_dir}/ralph.yml" in content, (
+        "cmd_ralph must check caller dir for ralph.yml"
+    )
+    assert "CLAWKEY_DIR}/ralph.yml" in content, (
+        "cmd_ralph must fall back to CLAWKEY_DIR/ralph.yml"
+    )
 
 
-def test_ralph_run_script_is_executable():
-    path = os.path.join(PROJECT_ROOT, "ralph-run.sh")
-    assert os.access(path, os.X_OK), "ralph-run.sh is not executable"
+def test_clawkey_ralph_supports_claude_and_aider_backends():
+    """cmd_ralph must dispatch on CLAWKEY_BACKEND for both claude and aider."""
+    script = os.path.join(PROJECT_ROOT, "clawkey")
+    with open(script) as f:
+        content = f.read()
+    # Restrict the search to the cmd_ralph function body.
+    start = content.index("cmd_ralph()")
+    end = content.index("# ──", start)
+    body = content[start:end]
+    assert "claude)" in body, "cmd_ralph must handle claude backend"
+    assert "aider)" in body, "cmd_ralph must handle aider backend"
