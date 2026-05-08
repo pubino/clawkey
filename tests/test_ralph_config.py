@@ -73,7 +73,14 @@ def test_portkey_backend_script_supports_claude_and_aider():
 
 
 def test_prompt_has_loop_complete():
-    """PROMPT.md must contain the LOOP_COMPLETE signal."""
+    """PROMPT.md must contain the LOOP_COMPLETE signal.
+
+    Ralph reads PROMPT.md as its task prompt and matches output against
+    event_loop.completion_promise from ralph.yml ("LOOP_COMPLETE");
+    a template that omits it would silently produce non-terminating loops.
+    PROMPT.md is the tracked canonical template — clawkey-init.sh seeds
+    downstream projects by copying it.
+    """
     path = os.path.join(PROJECT_ROOT, "PROMPT.md")
     assert os.path.exists(path), "PROMPT.md not found"
     with open(path) as f:

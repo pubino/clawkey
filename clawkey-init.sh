@@ -41,25 +41,10 @@ cp "${CLAWKEY_DIR}/ralph.yml" .
 cp "${CLAWKEY_DIR}/portkey-backend.sh" .
 chmod +x portkey-backend.sh
 
-# Create a starter PROMPT.md if one doesn't exist
+# Seed a starter PROMPT.md from the upstream template (single source of truth
+# at CLAWKEY_DIR/PROMPT.md so the heredoc and the tracked template can't drift).
 if [ ! -f PROMPT.md ]; then
-    cat > PROMPT.md << 'EOF'
-# Task
-
-Describe your task here.
-
-## Requirements
-
-1. ...
-
-## Acceptance Criteria
-
-- ...
-
-## Completion
-
-When all requirements are met, output: LOOP_COMPLETE
-EOF
+    cp "${CLAWKEY_DIR}/PROMPT.md" .
     echo "Created PROMPT.md — edit it with your task."
 else
     echo "PROMPT.md already exists."
