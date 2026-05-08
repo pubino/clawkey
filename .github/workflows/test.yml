@@ -37,7 +37,9 @@ jobs:
           curl -fsSL https://ftp.gnu.org/gnu/bash/bash-3.2.57.tar.gz | tar -xz
           cd bash-3.2.57
           ./configure --prefix=/opt/bash3 --quiet > /dev/null
-          make -j2 -s
+          # bash 3.2's Makefile is not parallel-safe (race in lib/readline ar
+          # invocation). Single-threaded builds in ~60s and never flakes.
+          make -s
           sudo make install -s
 
       - name: Show bash 3.2 version
