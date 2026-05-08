@@ -178,6 +178,83 @@ def test_uninstall_when_not_installed_is_no_op(sandbox):
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def test_install_rejects_unsupported_python(source_tarball, sandbox, tmp_path):
+    """install.sh must refuse a CLAWKEY_PYTHON outside [3.10, 3.13].
+
+    Default `python3` on modern macOS is 3.14, which orjson can't build a
+    wheel for; without this check, install.sh hits a Rust-compile failure
+    50 transitive deps deep. CLAWKEY_PYTHON is the user-visible escape
+    hatch, so it needs the same range check the auto-detect path uses.
+    """
+    fake = tmp_path / "python3.99"
+    fake.write_text(
+        "#!/usr/bin/env bash\n"
+        "case \"$*\" in\n"
+        "  *sys.version_info*) echo '3.99' ;;\n"
+        "  *sys.executable*)   echo \"$0\" ;;\n"
+        "  *) ;;\n"
+        "esac\n"
+    )
+    fake.chmod(0o755)
+
+    result = _run(
+        [],
+        sandbox=sandbox,
+        tarball=source_tarball,
+        extra_env={"CLAWKEY_PYTHON": str(fake)},
+    )
+    assert result.returncode != 0
+    combined = result.stderr + result.stdout
+    assert "3.99" in combined, combined
+    assert "3.10" in combined and "3.13" in combined, combined
+
+
+def test_install_picks_versioned_python_over_default(source_tarball, sandbox, tmp_path, monkeypatch):
+    """When `python3` is too new but `python3.13` exists, install.sh must
+    pick the versioned binary instead of failing.
+
+    Builds a fake PATH with both: a `python3` that reports 3.99 (rejected)
+    and a `python3.13` that reports 3.13 (accepted). With CLAWKEY_SKIP_VENV=1
+    we don't actually invoke the interpreter; we only need install.sh to
+    reach the success branch without erroring on Python detection.
+    """
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir()
+
+    too_new = bin_dir / "python3"
+    too_new.write_text(
+        "#!/usr/bin/env bash\n"
+        "case \"$*\" in\n"
+        "  *sys.version_info*) echo '3.99' ;;\n"
+        "  *sys.executable*)   echo \"$0\" ;;\n"
+        "  *) ;;\n"
+        "esac\n"
+    )
+    too_new.chmod(0o755)
+
+    in_range = bin_dir / "python3.13"
+    in_range.write_text(
+        "#!/usr/bin/env bash\n"
+        "case \"$*\" in\n"
+        "  *sys.version_info*) echo '3.13' ;;\n"
+        "  *sys.executable*)   echo \"$0\" ;;\n"
+        "  *) ;;\n"
+        "esac\n"
+    )
+    in_range.chmod(0o755)
+
+    # Hermetic PATH: only our fakes plus the bare essentials install.sh needs
+    # (curl, tar, mkdir, etc.). Pulling them from /usr/bin keeps the test
+    # portable without depending on the host's Python at all.
+    result = _run(
+        [],
+        sandbox=sandbox,
+        tarball=source_tarball,
+        extra_env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_no_sudo_invocation():
     """Sanity: install.sh must never *invoke* sudo. Mentions in user-facing
     strings (e.g. 'no sudo required') are fine — we only flag command-position

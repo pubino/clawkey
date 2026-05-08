@@ -55,18 +55,91 @@ require_cmd() {
     fi
 }
 
-require_python() {
-    require_cmd python3 || exit $?
-    local v
-    v=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+# Verify <python> is in [3.10, 3.13]. Args: python binary (name or path).
+# Errors are emitted to stderr; callers can suppress with 2>/dev/null when
+# probing optional candidates.
+_check_python_version() {
+    local py="$1" v
+    v=$("$py" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null) || {
+        err "$py: failed to determine Python version"
+        return 1
+    }
     case "$v" in
-        3.10|3.11|3.12|3.13|3.14|3.1[5-9]|3.[2-9]?|[4-9].*)
+        3.10|3.11|3.12|3.13)
+            return 0
             ;;
         *)
-            err "Python 3.10+ required (found $v). See https://www.python.org/downloads/"
-            exit 1
+            err "$py is Python $v; clawkey requires 3.10–3.13."
+            return 1
             ;;
     esac
+}
+
+# Resolve <python> to an absolute path so the venv's shebangs and `which`
+# paths are stable across PATH changes. Falls back to the input on failure.
+_resolve_python() {
+    local py="$1" abs
+    abs=$("$py" -c 'import sys; print(sys.executable)' 2>/dev/null)
+    if [ -n "$abs" ] && [ -x "$abs" ]; then
+        echo "$abs"
+    else
+        command -v "$py" 2>/dev/null || echo "$py"
+    fi
+}
+
+# Pick a Python interpreter in the supported range [3.10, 3.13]. Sets the
+# global CLAWKEY_PYTHON to an absolute path.
+#
+# The upper bound is real and load-bearing: litellm[proxy] depends on orjson,
+# whose vendored pyo3 0.23 caps at Python 3.13. Modern Homebrew and the
+# python.org installer both ship Python 3.14 as `python3` today, so without
+# this guardrail every fresh macOS install hits a Rust-compile failure 50
+# transitive deps deep. When orjson/litellm catch up, widen the case in
+# _check_python_version.
+require_python() {
+    # Honor an explicit override first — useful for CI, custom toolchains,
+    # and the recovery path documented in the README.
+    if [ -n "${CLAWKEY_PYTHON:-}" ]; then
+        if ! "$CLAWKEY_PYTHON" -c '' >/dev/null 2>&1; then
+            err "CLAWKEY_PYTHON='$CLAWKEY_PYTHON' is not executable"
+            exit 1
+        fi
+        _check_python_version "$CLAWKEY_PYTHON" || exit 1
+        CLAWKEY_PYTHON=$(_resolve_python "$CLAWKEY_PYTHON")
+        return
+    fi
+
+    # Prefer a versioned binary, newest-supported first. This handles the
+    # common case where `python3` is too new (3.14+) but `python3.13` is also
+    # installed alongside it.
+    local candidate
+    for candidate in python3.13 python3.12 python3.11 python3.10; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            CLAWKEY_PYTHON=$(_resolve_python "$candidate")
+            return
+        fi
+    done
+
+    # Fall back to bare `python3` only if it's in range.
+    if command -v python3 >/dev/null 2>&1; then
+        if _check_python_version python3 2>/dev/null; then
+            CLAWKEY_PYTHON=$(_resolve_python python3)
+            return
+        fi
+        local v
+        v=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo "?")
+        err "python3 is $v; clawkey requires Python 3.10–3.13."
+        echo "  litellm[proxy] depends on orjson, which doesn't yet ship Python 3.14 wheels." >&2
+        echo "  Install a supported interpreter alongside your default:" >&2
+        echo "    brew install python@3.13            # macOS" >&2
+        echo "    apt install python3.13              # Debian/Ubuntu" >&2
+        echo "  Or pin one explicitly:" >&2
+        echo "    CLAWKEY_PYTHON=/path/to/python3.13 bash install.sh" >&2
+        exit 1
+    fi
+
+    err "No Python found on PATH. clawkey requires Python 3.10–3.13."
+    exit 1
 }
 
 resolve_ref() {
@@ -143,8 +216,21 @@ cmd_install() {
 
     if [ -z "${CLAWKEY_SKIP_VENV:-}" ]; then
         info "Setting up Python venv with litellm[proxy] (one minute on first install)..."
+        info "Using $CLAWKEY_PYTHON"
+
+        # If a previous install left a venv built against an out-of-range
+        # Python (e.g. system python3 was 3.14 before this guardrail existed),
+        # rebuild it. Otherwise the user re-runs install.sh, hits the same
+        # orjson wheel-build failure, and has no idea why.
+        if [ -d "$CLAWKEY_INSTALL_DIR/.venv" ]; then
+            if ! _check_python_version "$CLAWKEY_INSTALL_DIR/.venv/bin/python3" 2>/dev/null; then
+                warn "Existing venv uses an unsupported Python — rebuilding"
+                rm -rf "$CLAWKEY_INSTALL_DIR/.venv"
+            fi
+        fi
+
         if [ ! -d "$CLAWKEY_INSTALL_DIR/.venv" ]; then
-            python3 -m venv "$CLAWKEY_INSTALL_DIR/.venv"
+            "$CLAWKEY_PYTHON" -m venv "$CLAWKEY_INSTALL_DIR/.venv"
         fi
         "$CLAWKEY_INSTALL_DIR/.venv/bin/pip" install --quiet --upgrade pip
         "$CLAWKEY_INSTALL_DIR/.venv/bin/pip" install --quiet -r "$CLAWKEY_INSTALL_DIR/requirements.txt"
@@ -256,6 +342,7 @@ Environment overrides:
   CLAWKEY_REF           branch/tag/sha (default: latest release, falls back to main)
   CLAWKEY_INSTALL_DIR   install location (default: \$XDG_DATA_HOME/clawkey)
   CLAWKEY_BIN_DIR       symlink target (default: \$HOME/.local/bin)
+  CLAWKEY_PYTHON        Python interpreter (default: auto-detect 3.10–3.13)
 
 Test hooks:
   CLAWKEY_TARBALL       local path or file:// URL to a clawkey tarball
