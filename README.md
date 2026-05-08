@@ -4,8 +4,6 @@
 
 Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in **full interactive agent mode** with any model behind the [Portkey AI Gateway](https://portkey.ai), using [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) for protocol translation. Optionally drives the [Ralph](https://github.com/ralph-cli/ralph) orchestrator with a `claude` or `aider` backend.
 
-Everything is a `clawkey` subcommand — one CLI, one mental model.
-
 ## How it works
 
 ```
@@ -13,17 +11,19 @@ Claude Code  →  LiteLLM Proxy (127.0.0.1:4040)  →  Portkey AI Gateway  →  
                   Anthropic ⇄ OpenAI translation       routes by model name
 ```
 
-LiteLLM translates Anthropic `tool_use` blocks ↔ OpenAI `function_call` so Claude Code's agent loop (file editing, code execution, tool use) works against non-Claude models. All routing is via process-scoped env vars (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`); your `~/.claude/`, project `.claude/`, and `ANTHROPIC_API_KEY` are never read or written.
+LiteLLM translates Anthropic `tool_use` blocks ↔ OpenAI `function_call` so Claude Code's agent loop (file editing, code execution, tool use) works against non-Claude models.
+
+All routing is via process-scoped env vars (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`); your `~/.claude/`, project `.claude/`, and `ANTHROPIC_API_KEY` are never read or written.
 
 ## Install
 
-One-liner — no `sudo`, no admin privileges:
+One-liner:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/pubino/clawkey/main/install.sh | bash
 ```
 
-Installs the script tree to `$XDG_DATA_HOME/clawkey` *(default `~/.local/share/clawkey`)* with a Python venv for `litellm[proxy]`, and symlinks `clawkey` into `$HOME/.local/bin`. Re-running updates in place.
+Installs the script tree to `$XDG_DATA_HOME/clawkey`.  Re-run to update in place.
 
 ```bash
 | bash -s reinstall              # wipe install dir, fresh download + venv
@@ -31,13 +31,7 @@ Installs the script tree to `$XDG_DATA_HOME/clawkey` *(default `~/.local/share/c
 | bash -s uninstall --purge      # also remove ~/.config/clawkey + ~/.local/state/clawkey
 ```
 
-Pin to a specific tag/branch with `CLAWKEY_REF`:
-
-```bash
-CLAWKEY_REF=v0.1.0 bash <(curl -fsSL https://raw.githubusercontent.com/pubino/clawkey/main/install.sh)
-```
-
-You'll also need the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`) and a Portkey API key from your institution's AI Sandbox.
+You'll also need the Claude Code CLI (`npm install -g @anthropic-ai/claude-code` or `brew install claude-code`) and a Portkey API key from your institution's AI Sandbox.
 
 ## First-run setup
 
@@ -48,14 +42,16 @@ clawkey proxy install       # macOS: persistent proxy in the background (optiona
 clawkey run                 # launch Claude Code
 ```
 
-Without `proxy install`, every `clawkey run` cold-starts a fresh proxy (~30s wait). With it, the proxy lives in a user-scope launchd agent (`~/Library/LaunchAgents/com.clawkey.proxy.plist`) and `clawkey run` is sub-second. Edits via `clawkey config` or `clawkey models --add/--remove` reload the daemon automatically.
+Without `proxy install`, every `clawkey run` cold-starts a fresh proxy (~30s wait). With it, the proxy lives in a user-scope launchd agent (`~/Library/LaunchAgents/com.clawkey.proxy.plist`) and `clawkey run` is sub-second.
+
+Edits via `clawkey config` or `clawkey models --add/--remove` reload the daemon automatically.
 
 ## Daily use
 
 ```bash
 clawkey run                              # interactive Claude Code
 clawkey run -C ~/some-project            # set working directory
-clawkey run --print "explain this code"  # one-shot
+clawkey run --print "explain this"       # one-shot
 PORTKEY_MODEL=<name> clawkey run         # override model for one session
 
 clawkey ralph                            # Ralph + claude (reads PROMPT.md, exits on LOOP_COMPLETE)
@@ -67,11 +63,9 @@ clawkey proxy logs                       # tail ~/.local/state/clawkey/proxy.log
 
 Ralph requires `ralph` (and `aider` for the aider backend); see their respective install docs.
 
-> **Tip:** alias `ck="$HOME/.local/bin/clawkey"` so you can type `ck run`, `ck status`, etc.
-
 ## Configuration
 
-User config lives in XDG-compliant paths so the install tree can be read-only (e.g. brew Cellar):
+User config lives in XDG-compliant paths:
 
 | Path | Contents |
 |---|---|
@@ -88,8 +82,6 @@ User config lives in XDG-compliant paths so the install tree can be read-only (e
 | `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | Output token cap | `16384` |
 | `CLAWKEY_BACKEND` | Ralph backend: `claude` or `aider` | `claude` |
 | `CLAWKEY_CONFIG_DIR` / `CLAWKEY_STATE_DIR` / `CLAWKEY_ENV_FILE` / `CLAWKEY_MODEL_CONFIG` | Override XDG paths (per-project state, etc.) | XDG defaults |
-
-`clawkey config` writes the first two; the rest are optional overrides. Migrating from a pre-XDG checkout? First invocation auto-moves `.env` and the proxy log to the XDG locations.
 
 ## Bootstrap a per-project copy
 
@@ -115,7 +107,3 @@ The bootstrapped copy still uses XDG paths — the project dir holds only the sc
 CI runs the full suite on every push (skipping doc-only commits) on a Linux runner with **bash 3.2.57** built and cached — the same version macOS ships, so compatibility quirks like empty-array expansion under `set -u` are caught upstream of any macOS box.
 
 Test files: `test_claude_config.py`, `test_ralph_config.py`, `test_proxy_subcommand.py`, `test_xdg_migration.py`, `test_install_sh.py` (no credentials needed) and `test_litellm_proxy.py`, `test_portkey_connection.py` (need `AI_SANDBOX_KEY` and a running proxy; skip cleanly otherwise).
-
-## License
-
-Add a LICENSE file at the repo root before publishing.
