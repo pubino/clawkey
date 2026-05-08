@@ -1,6 +1,6 @@
 # Clawkey
 
-Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in **full interactive agent mode** with any model behind the [Portkey AI Gateway](https://portkey.ai), using [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) for protocol translation. Optionally drives the [Ralph](https://github.com/ralph-cli/ralph) orchestrator with a `claude` or `aider` backend.
+Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in interactive agent mode with any model behind the [Portkey AI Gateway](https://portkey.ai), using [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) for protocol translation. Optionally drives the [Ralph](https://github.com/ralph-cli/ralph) orchestrator with a `claude` or `aider` backend.
 
 ## How it works
 
