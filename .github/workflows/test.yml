@@ -83,3 +83,92 @@ jobs:
           which bash
           bash --version | head -1
           pytest tests/ -v
+
+  # ────────────────────────────────────────────────────────────────────
+  # End-to-end connectivity test: install Claude Code + clawkey from this
+  # commit, configure with the AI_SANDBOX_KEY secret, and ask the model
+  # to reply with a known token through the full LiteLLM → Portkey path.
+  #
+  # Skips gracefully (with a GitHub notice, exit 0) when the secret is
+  # not configured — e.g. PRs from forks, repos without the secret set.
+  e2e:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      AI_SANDBOX_KEY: ${{ secrets.AI_SANDBOX_KEY }}
+      E2E_MODEL: ${{ vars.E2E_MODEL || 'claude-opus-4-7' }}
+    steps:
+      - name: Detect AI_SANDBOX_KEY availability
+        id: detect
+        run: |
+          if [ -n "${AI_SANDBOX_KEY:-}" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=E2E skipped::AI_SANDBOX_KEY secret not configured (forks/PRs without secret access skip this job by design)."
+          fi
+
+      - if: steps.detect.outputs.run == 'true'
+        uses: actions/checkout@v6
+
+      - if: steps.detect.outputs.run == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - if: steps.detect.outputs.run == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - if: steps.detect.outputs.run == 'true'
+        name: Install Claude Code CLI (npm)
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude --version
+
+      - if: steps.detect.outputs.run == 'true'
+        name: Install clawkey from this commit (eats own dogfood)
+        run: |
+          set -e
+          # Pack the working tree into a tarball laid out the way install.sh
+          # expects, then point install.sh at it via CLAWKEY_TARBALL so we
+          # exercise install.sh exactly as a real user would, but without
+          # depending on a published GitHub Release for this branch.
+          git archive --format=tar.gz --prefix=clawkey-src/ HEAD > /tmp/clawkey.tar.gz
+          CLAWKEY_TARBALL=/tmp/clawkey.tar.gz bash install.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - if: steps.detect.outputs.run == 'true'
+        name: Configure clawkey with the sandbox key
+        run: |
+          set -e
+          mkdir -p "$HOME/.config/clawkey"
+          umask 077
+          cat > "$HOME/.config/clawkey/.env" <<EOF
+          AI_SANDBOX_KEY=$AI_SANDBOX_KEY
+          PORTKEY_MODEL=$E2E_MODEL
+          LITELLM_MASTER_KEY=sk-clawkey-ci-$(openssl rand -hex 16)
+          EOF
+          # Drive the interactive `models --add` prompt non-interactively.
+          printf '%s\n' "$E2E_MODEL" | clawkey models --add
+          clawkey status
+
+      - if: steps.detect.outputs.run == 'true'
+        name: Hello-world inference end-to-end
+        run: |
+          set -e
+          # `clawkey run` cold-starts the LiteLLM proxy in this CI shell
+          # (no persistent agent on Linux runners) and execs claude --print.
+          # We assert the model returns the agreed-upon token to confirm the
+          # full Anthropic → LiteLLM → Portkey → provider → response chain.
+          OUT=$(clawkey run --print "Reply with exactly the single word: PONG")
+          echo "── model response ──"
+          printf '%s\n' "$OUT"
+          echo "────────────────────"
+          echo "$OUT" | grep -qi 'pong' || {
+            echo "::error title=E2E failed::Response did not contain 'pong': $OUT"
+            exit 1
+          }
+          echo "✓ End-to-end Claude Code → LiteLLM → Portkey works."
