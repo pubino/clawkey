@@ -102,6 +102,6 @@ The bootstrapped copy still uses XDG paths — the project dir holds only the sc
 ./test.sh --docker              # run inside the docker-compose test service
 ```
 
-CI runs the full suite on every push (skipping doc-only commits) on a Linux runner with **bash 3.2.57** built and cached — the same version macOS ships, so compatibility quirks like empty-array expansion under `set -u` are caught upstream of any macOS box.
+CI runs the full suite on every push (skipping doc-only commits) on a Linux runner with bash 3.2 built and cached to better align with macOS, so compatibility quirks like empty-array expansion under `set -u` are caught upstream.
 
 Test files: `test_claude_config.py`, `test_ralph_config.py`, `test_proxy_subcommand.py`, `test_xdg_migration.py`, `test_install_sh.py` (no credentials needed) and `test_litellm_proxy.py`, `test_portkey_connection.py` (need `AI_SANDBOX_KEY` and a running proxy; skip cleanly otherwise).
