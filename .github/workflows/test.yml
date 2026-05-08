@@ -28,8 +28,8 @@ jobs:
             clawkey clawkey-init.sh install.sh portkey-backend.sh test.sh load-env.sh \
             lib/clawkey-runtime.sh lib/launchd/run-proxy.sh
 
-      - name: plist XML validation
-        run: xmllint --noout lib/launchd/com.clawkey.proxy.plist.in
+      # Plist semantics are covered by tests/test_proxy_subcommand.py
+      # (plistlib parses the rendered template), which runs in the test job.
 
   test:
     needs: lint
