@@ -27,6 +27,28 @@ def test_runtime_lib_uses_user_scope_paths():
     )
 
 
+def test_ephemeral_proxy_reads_user_xdg_model_config():
+    """clawkey_proxy_start_ephemeral must point litellm at $CLAWKEY_MODEL_CONFIG
+    (the user's XDG copy, written by `clawkey models --add`), not at the
+    in-tree $CLAWKEY_DIR/litellm_config.yaml — that's the empty template
+    (`model_list: []`) and would boot the proxy with zero models, so every
+    request fails with "Invalid model name passed in model=<name>".
+
+    The persistent proxy via run-proxy.sh already reads from XDG; this
+    test pins the ephemeral path to the same file so the two stay aligned.
+    """
+    lib = (PROJECT_ROOT / "lib" / "clawkey-runtime.sh").read_text()
+    start = lib.index("clawkey_proxy_start_ephemeral()")
+    end = lib.index("\n}\n", start)
+    body = lib[start:end]
+    assert '"$CLAWKEY_MODEL_CONFIG"' in body, (
+        "ephemeral proxy must read $CLAWKEY_MODEL_CONFIG (XDG config)"
+    )
+    assert "CLAWKEY_DIR}/litellm_config.yaml" not in body, (
+        "ephemeral proxy must not load the in-tree empty template"
+    )
+
+
 def test_clawkey_proxy_install_uses_gui_domain_no_sudo():
     """Install path must target gui/$UID and never call sudo."""
     script = (PROJECT_ROOT / "clawkey").read_text()

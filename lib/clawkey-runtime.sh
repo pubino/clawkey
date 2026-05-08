@@ -154,7 +154,13 @@ clawkey_proxy_start_ephemeral() {
     local port="${LITELLM_PORT:-4040}"
     clawkey_state_dir_init
     echo "Starting LiteLLM proxy on port ${port}..."
-    litellm --config "${CLAWKEY_DIR}/litellm_config.yaml" \
+    # Read the user's model list from $CLAWKEY_MODEL_CONFIG (XDG config dir,
+    # written by `clawkey models --add`), not $CLAWKEY_DIR/litellm_config.yaml
+    # — that path is the in-tree template (`model_list: []`) and would boot
+    # the proxy with zero models, so every request fails with
+    # "Invalid model name passed in model=<name>". The persistent proxy via
+    # run-proxy.sh already uses the XDG path; this aligns ephemeral with it.
+    litellm --config "$CLAWKEY_MODEL_CONFIG" \
             --host 127.0.0.1 --port "$port" \
         > "$CLAWKEY_PROXY_LOG" 2>&1 &
     _CLAWKEY_LITELLM_PID=$!
