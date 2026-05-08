@@ -210,7 +210,32 @@ clawkey_proxy_loaded() {
 clawkey_proxy_reload_if_loaded() {
     if clawkey_proxy_loaded; then
         launchctl kickstart -k "gui/$(id -u)/${CLAWKEY_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
+        clawkey_proxy_wait_running >/dev/null
     fi
+}
+
+# Poll /health until the proxy responds or 10s elapses. Best-effort: returns 0
+# on success, 1 on timeout — callers decide whether to surface the timeout.
+# Sources LITELLM_MASTER_KEY from .env if it isn't already in the environment
+# (callers like clawkey_proxy_reload_if_loaded run from contexts that don't
+# inherit it). Restores the unset state on exit.
+clawkey_proxy_wait_running() {
+    local _had_key="${LITELLM_MASTER_KEY:-}"
+    if [ -z "$_had_key" ] && [ -f "$CLAWKEY_ENV_FILE" ]; then
+        local _k
+        _k=$(grep -m1 '^LITELLM_MASTER_KEY=' "$CLAWKEY_ENV_FILE" 2>/dev/null | cut -d= -f2-)
+        [ -n "$_k" ] && export LITELLM_MASTER_KEY="$_k"
+    fi
+    local _rc=1 _i
+    for _i in $(seq 1 10); do
+        if clawkey_proxy_running; then
+            _rc=0
+            break
+        fi
+        sleep 1
+    done
+    [ -z "$_had_key" ] && unset LITELLM_MASTER_KEY 2>/dev/null || true
+    return "$_rc"
 }
 
 # ── Anthropic env wiring ────────────────────────────────────────────
