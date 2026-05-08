@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sanity-check tag matches install.sh CLAWKEY_REPO default
+        run: |
+          # install.sh defaults to CLAWKEY_REPO=pubino/clawkey. If the repo
+          # ever moves, update install.sh in the same commit as the tag.
+          grep -q 'CLAWKEY_REPO=.*pubino/clawkey' install.sh
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          # Upload install.sh as a release asset so this stable URL works:
+          #   https://github.com/pubino/clawkey/releases/latest/download/install.sh
+          # The raw URL on main remains the primary install entry point.
+          files: install.sh
