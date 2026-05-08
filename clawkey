@@ -26,12 +26,19 @@
 set -euo pipefail
 
 CLAWKEY_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG_FILE="${CLAWKEY_DIR}/litellm_config.yaml"
-ENV_FILE="${CLAWKEY_DIR}/.env"
 
-# Shared runtime helpers (proxy lifecycle, env wiring, launchd integration).
+# Shared runtime helpers + XDG path constants.
 # shellcheck source=lib/clawkey-runtime.sh
 . "${CLAWKEY_DIR}/lib/clawkey-runtime.sh"
+
+# One-shot migration from the legacy CLAWKEY_DIR-co-located layout, then
+# seed the user's litellm_config.yaml from the in-tree template if missing.
+# Both are no-ops on subsequent runs.
+clawkey_migrate_legacy_config
+clawkey_seed_model_config
+
+CONFIG_FILE="$CLAWKEY_MODEL_CONFIG"
+ENV_FILE="$CLAWKEY_ENV_FILE"
 
 # ── Colors ──────────────────────────────────────────────────────────
 
@@ -695,6 +702,8 @@ _render_plist() {
     mkdir -p "$(dirname "$CLAWKEY_LAUNCHD_PLIST")"
     sed \
         -e "s|{{CLAWKEY_DIR}}|${CLAWKEY_DIR}|g" \
+        -e "s|{{CLAWKEY_CONFIG_DIR}}|${CLAWKEY_CONFIG_DIR}|g" \
+        -e "s|{{CLAWKEY_STATE_DIR}}|${CLAWKEY_STATE_DIR}|g" \
         -e "s|{{LITELLM_PORT}}|${port}|g" \
         -e "s|{{LOG_PATH}}|${CLAWKEY_PROXY_LOG}|g" \
         "$template" > "$CLAWKEY_LAUNCHD_PLIST"

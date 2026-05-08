@@ -19,16 +19,25 @@ fi
 
 cd "$CLAWKEY_DIR"
 
-if [ -f .env ]; then
+CONFIG_DIR="${CLAWKEY_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/clawkey}"
+ENV_FILE="$CONFIG_DIR/.env"
+LITELLM_CONFIG="$CONFIG_DIR/litellm_config.yaml"
+
+if [ -f "$ENV_FILE" ]; then
     set -a
     # shellcheck disable=SC1091
-    . ./.env
+    . "$ENV_FILE"
     set +a
 fi
 
-if [ -d .venv ]; then
+if [ ! -f "$LITELLM_CONFIG" ]; then
+    echo "Error: $LITELLM_CONFIG not found. Run: clawkey config" >&2
+    exit 64
+fi
+
+if [ -d "$CLAWKEY_DIR/.venv" ]; then
     # shellcheck disable=SC1091
-    . ./.venv/bin/activate
+    . "$CLAWKEY_DIR/.venv/bin/activate"
 fi
 
 if ! command -v litellm >/dev/null 2>&1; then
@@ -39,6 +48,6 @@ fi
 PORT="${LITELLM_PORT:-4040}"
 
 exec litellm \
-    --config "${CLAWKEY_DIR}/litellm_config.yaml" \
+    --config "$LITELLM_CONFIG" \
     --host 127.0.0.1 \
     --port "$PORT"

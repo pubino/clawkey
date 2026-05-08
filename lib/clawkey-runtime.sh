@@ -25,9 +25,17 @@
 #   clawkey_export_anthropic_env
 #   clawkey_parse_caller_dir
 
-# ── Paths and labels ────────────────────────────────────────────────
+# ── Paths and labels (XDG Base Directory Specification) ────────────
+#
+# User-mutable state lives under XDG-defined dirs so the script tree
+# (CLAWKEY_DIR — typically a Homebrew Cellar path or a git checkout)
+# can be read-only. Override individual constants if you want a custom
+# layout (e.g. CLAWKEY_CONFIG_DIR=$PWD/.clawkey for per-project state).
 
-CLAWKEY_STATE_DIR="${CLAWKEY_STATE_DIR:-$HOME/.clawkey}"
+CLAWKEY_CONFIG_DIR="${CLAWKEY_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/clawkey}"
+CLAWKEY_STATE_DIR="${CLAWKEY_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/clawkey}"
+CLAWKEY_ENV_FILE="${CLAWKEY_ENV_FILE:-$CLAWKEY_CONFIG_DIR/.env}"
+CLAWKEY_MODEL_CONFIG="${CLAWKEY_MODEL_CONFIG:-$CLAWKEY_CONFIG_DIR/litellm_config.yaml}"
 CLAWKEY_PROXY_LOG="${CLAWKEY_PROXY_LOG:-$CLAWKEY_STATE_DIR/proxy.log}"
 CLAWKEY_LAUNCHD_LABEL="com.clawkey.proxy"
 CLAWKEY_LAUNCHD_PLIST="$HOME/Library/LaunchAgents/${CLAWKEY_LAUNCHD_LABEL}.plist"
@@ -35,17 +43,48 @@ CLAWKEY_LAUNCHD_PLIST="$HOME/Library/LaunchAgents/${CLAWKEY_LAUNCHD_LABEL}.plist
 # Module-private state for the ephemeral proxy path.
 _CLAWKEY_LITELLM_PID=""
 
+clawkey_config_dir_init() {
+    mkdir -p "$CLAWKEY_CONFIG_DIR"
+}
+
 clawkey_state_dir_init() {
     mkdir -p "$CLAWKEY_STATE_DIR"
 }
 
+# Seed CLAWKEY_MODEL_CONFIG from the in-tree template on first use so
+# `clawkey models --add` has a file to edit.
+clawkey_seed_model_config() {
+    if [ ! -f "$CLAWKEY_MODEL_CONFIG" ] && [ -f "$CLAWKEY_DIR/litellm_config.yaml" ]; then
+        clawkey_config_dir_init
+        cp "$CLAWKEY_DIR/litellm_config.yaml" "$CLAWKEY_MODEL_CONFIG"
+    fi
+}
+
+# One-shot migration from the pre-XDG layout. Moves CLAWKEY_DIR-local .env
+# to the XDG config dir and migrates the proxy log out of ~/.clawkey/.
+# litellm_config.yaml is handled by clawkey_seed_model_config, which fires
+# whether the in-tree file is a template or already has user models.
+# Each branch is a no-op once the destination exists.
+clawkey_migrate_legacy_config() {
+    local legacy_env="$CLAWKEY_DIR/.env"
+    if [ -f "$legacy_env" ] && [ ! -f "$CLAWKEY_ENV_FILE" ]; then
+        clawkey_config_dir_init
+        mv "$legacy_env" "$CLAWKEY_ENV_FILE"
+        echo "Moved $legacy_env -> $CLAWKEY_ENV_FILE (XDG layout)" >&2
+    fi
+    local legacy_log="$HOME/.clawkey/proxy.log"
+    if [ -f "$legacy_log" ] && [ ! -f "$CLAWKEY_PROXY_LOG" ]; then
+        clawkey_state_dir_init
+        mv "$legacy_log" "$CLAWKEY_PROXY_LOG" 2>/dev/null || true
+    fi
+}
+
 # ── Env loading ─────────────────────────────────────────────────────
 
-# Source .env from CLAWKEY_DIR. Existing env vars take precedence over file values.
+# Source CLAWKEY_ENV_FILE. Existing env vars take precedence over file values.
 clawkey_load_env() {
-    local env_file="${CLAWKEY_DIR}/.env"
-    if [ ! -f "$env_file" ]; then
-        echo "Error: ${env_file} not found. Run: clawkey config" >&2
+    if [ ! -f "$CLAWKEY_ENV_FILE" ]; then
+        echo "Error: ${CLAWKEY_ENV_FILE} not found. Run: clawkey config" >&2
         return 1
     fi
     local _line _key _val
@@ -56,7 +95,7 @@ clawkey_load_env() {
         if [ -z "${!_key+x}" ]; then
             export "$_key=$_val"
         fi
-    done < "$env_file"
+    done < "$CLAWKEY_ENV_FILE"
 }
 
 # Verify required env vars are non-empty. Args: list of var names.

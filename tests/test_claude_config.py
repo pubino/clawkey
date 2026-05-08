@@ -84,11 +84,6 @@ def test_litellm_config_valid():
         assert "litellm_params" in model, f"Model entry missing litellm_params: {model}"
 
 
-def test_env_file_exists():
-    env_file = os.path.join(PROJECT_ROOT, ".env")
-    assert os.path.exists(env_file), ".env not found"
-
-
 def test_load_env_exists():
     script = os.path.join(PROJECT_ROOT, "load-env.sh")
     assert os.path.exists(script), "load-env.sh not found"

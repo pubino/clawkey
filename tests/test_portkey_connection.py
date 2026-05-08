@@ -72,16 +72,34 @@ def test_portkey_messages_api(portkey_api_key, portkey_model):
 
 
 def _load_available_models():
-    """Read model names from litellm_config.yaml."""
+    """Read model names from the active user litellm_config.yaml.
+
+    The in-tree file is a template (`model_list: []`); the active config lives
+    under XDG_CONFIG_HOME/clawkey/. Falls back to the in-tree template if the
+    user copy doesn't exist (e.g., CI / Docker).
+    """
+    config_home = os.environ.get(
+        "CLAWKEY_CONFIG_DIR",
+        os.path.join(
+            os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+            "clawkey",
+        ),
+    )
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    config_path = os.path.join(project_root, "litellm_config.yaml")
-    try:
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-        models = [m["model_name"] for m in config.get("model_list", [])]
-        return models if models else []
-    except (FileNotFoundError, KeyError, TypeError):
-        return []
+    candidates = [
+        os.path.join(config_home, "litellm_config.yaml"),
+        os.path.join(project_root, "litellm_config.yaml"),
+    ]
+    for path in candidates:
+        try:
+            with open(path) as f:
+                config = yaml.safe_load(f)
+            models = [m["model_name"] for m in config.get("model_list") or []]
+            if models:
+                return models
+        except (FileNotFoundError, KeyError, TypeError):
+            continue
+    return []
 
 
 AVAILABLE_MODELS = _load_available_models()

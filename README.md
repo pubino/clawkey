@@ -80,12 +80,19 @@ Config and model edits are picked up automatically — `clawkey config`, `clawke
 ./clawkey models --remove       # Remove a model
 ```
 
-Configuration is stored in two files:
+Configuration is stored in XDG-compliant user directories — never in the project tree, so the script tree can be read-only (e.g. installed via Homebrew):
 
-| File | Contents | Git-tracked? |
-|------|----------|:---:|
-| `.env` | API key, default model, proxy auth key | No |
-| `litellm_config.yaml` | Full model list for LiteLLM proxy | Yes |
+| Path | Contents |
+|------|----------|
+| `$XDG_CONFIG_HOME/clawkey/.env` *(default `~/.config/clawkey/.env`)* | API key, default model, proxy auth key |
+| `$XDG_CONFIG_HOME/clawkey/litellm_config.yaml` | Active model list for the LiteLLM proxy (seeded from the in-tree template on first run) |
+| `$XDG_STATE_HOME/clawkey/proxy.log` *(default `~/.local/state/clawkey/proxy.log`)* | Persistent-proxy log |
+
+The `litellm_config.yaml` checked into the repo is a template (`model_list: []`); your edits via `clawkey models --add` go to the user copy under `$XDG_CONFIG_HOME/clawkey/`.
+
+Override any path with the corresponding env var (`CLAWKEY_CONFIG_DIR`, `CLAWKEY_STATE_DIR`, `CLAWKEY_ENV_FILE`, `CLAWKEY_MODEL_CONFIG`) — useful for per-project state if you want it.
+
+> **Migrating from a pre-XDG checkout?** First invocation of `clawkey` automatically moves your old `.env` and proxy log to the XDG locations.
 
 ## Use Cases
 

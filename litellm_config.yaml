@@ -1,16 +1,12 @@
-# LiteLLM Proxy configuration for Clawkey
-# Routes Claude Code's Anthropic Messages API through LiteLLM to Portkey AI Gateway.
-# LiteLLM translates Anthropic tool_use <> OpenAI function_call automatically,
-# enabling Claude Code's interactive agent mode with non-Claude models.
+# LiteLLM Proxy configuration for Clawkey — TEMPLATE.
+# This file is the seed for $CLAWKEY_CONFIG_DIR/litellm_config.yaml (default
+# ~/.config/clawkey/litellm_config.yaml). On first invocation, clawkey copies
+# this file to that location. All subsequent edits via `clawkey models --add`
+# operate on the user copy, not this template.
 #
-# Add models with: ./clawkey models --add
+# Add your institution's models with: clawkey models --add
 
-model_list:
-  - model_name: claude-opus-4-7
-    litellm_params:
-      model: openai/claude-opus-4-7
-      api_base: https://api.portkey.ai/v1
-      api_key: os.environ/AI_SANDBOX_KEY
+model_list: []
 
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"
