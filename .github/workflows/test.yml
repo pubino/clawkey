@@ -7,54 +7,68 @@ on:
     branches: [main]
 
 jobs:
-  lint:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: bash syntax check
+      # Cache bash-3.2.57 (the version macOS ships) between runs.
+      # Hit: ~5s. Miss (compile from source): ~60s.
+      - name: Cache bash 3.2
+        id: cache-bash3
+        uses: actions/cache@v4
+        with:
+          path: /opt/bash3
+          key: bash-3.2.57-ubuntu-latest
+
+      - name: Build bash 3.2 (matches macOS)
+        if: steps.cache-bash3.outputs.cache-hit != 'true'
         run: |
           set -e
-          for f in clawkey clawkey-init.sh install.sh portkey-backend.sh test.sh load-env.sh \
-                   lib/clawkey-runtime.sh lib/launchd/run-proxy.sh; do
-            echo "bash -n $f"
-            bash -n "$f"
-          done
+          curl -fsSL https://ftp.gnu.org/gnu/bash/bash-3.2.57.tar.gz | tar -xz
+          cd bash-3.2.57
+          ./configure --prefix=/opt/bash3 --quiet > /dev/null
+          make -j2 -s
+          sudo make install -s
+
+      - name: Show bash 3.2 version
+        run: /opt/bash3/bin/bash --version | head -1
 
       - name: shellcheck (errors only)
         run: |
-          # ubuntu-latest ships shellcheck pre-installed.
           shellcheck --severity=error \
             clawkey clawkey-init.sh install.sh portkey-backend.sh test.sh load-env.sh \
             lib/clawkey-runtime.sh lib/launchd/run-proxy.sh
 
-      # Plist semantics are covered by tests/test_proxy_subcommand.py
-      # (plistlib parses the rendered template), which runs in the test job.
-
-  test:
-    needs: lint
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v6
+      - name: Parse-check every shell script under bash 3.2
+        run: |
+          set -e
+          for f in clawkey clawkey-init.sh install.sh portkey-backend.sh test.sh load-env.sh \
+                   lib/clawkey-runtime.sh lib/launchd/run-proxy.sh; do
+            echo "bash 3.2 -n $f"
+            /opt/bash3/bin/bash -n "$f"
+          done
 
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
 
-      - name: install test deps
+      - name: Install test deps
         run: |
           python -m pip install --upgrade pip
-          # Lightweight set — full requirements.txt pulls litellm[proxy] (~100 packages)
-          # which the integration tests need but the rest of the suite does not.
+          # Lightweight: pytest, pyyaml, requests. The full requirements.txt
+          # pulls litellm[proxy] (~100 transitive packages) which the
+          # integration tests need but the rest of the suite doesn't.
           pip install pytest pyyaml requests
 
-      - name: pytest
+      - name: Run pytest under bash 3.2
+        env:
+          # Prepend bash 3.2 so test subprocesses that invoke `bash` pick it up.
+          # Catches the same compatibility quirks as a macOS runner
+          # (e.g. empty-array expansion under set -u) without macOS minutes.
+          PATH: /opt/bash3/bin:/usr/local/bin:/usr/bin:/bin
         run: |
-          # Integration tests (test_litellm_proxy.py, test_portkey_connection.py)
-          # skip cleanly when AI_SANDBOX_KEY / a running proxy aren't available.
+          which bash
+          bash --version | head -1
           pytest tests/ -v
