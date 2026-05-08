@@ -17,16 +17,8 @@ if [ ! -d .git ]; then
     git init
 fi
 
-# Create .env template. LITELLM_MASTER_KEY is intentionally omitted — running
-# `./clawkey config` will mint a random one on first use.
-if [ ! -f .env ]; then
-    cat > .env << 'EOF'
-AI_SANDBOX_KEY=<your-portkey-api-key>
-EOF
-    echo "Created .env"
-else
-    echo ".env already exists, skipping."
-fi
+# User config lives in XDG locations (~/.config/clawkey/) — not the project dir.
+# `./clawkey config` will create $XDG_CONFIG_HOME/clawkey/.env on first run.
 
 # Copy clawkey itself so `./clawkey run` works in the new project.
 cp "${CLAWKEY_DIR}/clawkey" .
@@ -73,11 +65,10 @@ else
     echo "PROMPT.md already exists."
 fi
 
-# Append to .gitignore
+# Append to .gitignore (no .env entry needed — user config is in XDG, outside the project).
 if [ ! -f .gitignore ]; then
     cat > .gitignore << 'GITEOF'
 .claude/
-.env
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -85,9 +76,7 @@ __pycache__/
 .DS_Store
 GITEOF
 else
-    for pattern in ".claude/" ".env"; do
-        grep -qxF "$pattern" .gitignore 2>/dev/null || echo "$pattern" >> .gitignore
-    done
+    grep -qxF ".claude/" .gitignore 2>/dev/null || echo ".claude/" >> .gitignore
 fi
 
 echo ""

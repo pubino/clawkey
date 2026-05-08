@@ -14,10 +14,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_runtime_lib_uses_user_scope_paths():
-    """The runtime lib must put state under $HOME/.clawkey and the plist under
-    ~/Library/LaunchAgents (user scope) — never /Library/LaunchDaemons."""
+    """The runtime lib must use XDG-compliant user-scope paths and the plist
+    must go under ~/Library/LaunchAgents (user scope) — never /Library/LaunchDaemons."""
     lib = (PROJECT_ROOT / "lib" / "clawkey-runtime.sh").read_text()
-    assert "$HOME/.clawkey" in lib, "state dir must default to $HOME/.clawkey"
+    assert "XDG_CONFIG_HOME" in lib, "config dir must respect XDG_CONFIG_HOME"
+    assert "XDG_STATE_HOME" in lib, "state dir must respect XDG_STATE_HOME"
+    assert "$HOME/.config" in lib, "config dir must default to $HOME/.config/clawkey"
+    assert "$HOME/.local/state" in lib, "state dir must default to $HOME/.local/state/clawkey"
     assert "Library/LaunchAgents" in lib, "plist path must be Library/LaunchAgents"
     assert "/Library/LaunchDaemons" not in lib, (
         "must not reference system-scope LaunchDaemons (would require sudo)"
@@ -44,16 +47,24 @@ def test_plist_template_exists_and_is_well_formed():
     assert template.exists(), "plist template missing"
     raw = template.read_text()
     # Render with safe substitutions and parse as plist.
+    config_dir = Path.home() / ".config" / "clawkey"
+    state_dir = Path.home() / ".local" / "state" / "clawkey"
     rendered = (
         raw.replace("{{CLAWKEY_DIR}}", str(PROJECT_ROOT))
+           .replace("{{CLAWKEY_CONFIG_DIR}}", str(config_dir))
+           .replace("{{CLAWKEY_STATE_DIR}}", str(state_dir))
            .replace("{{LITELLM_PORT}}", "4040")
-           .replace("{{LOG_PATH}}", str(Path.home() / ".clawkey" / "proxy.log"))
+           .replace("{{LOG_PATH}}", str(state_dir / "proxy.log"))
     )
+    # All placeholders must have been substituted.
+    assert "{{" not in rendered, f"unsubstituted placeholder in plist: {rendered}"
     parsed = plistlib.loads(rendered.encode())
     assert parsed["Label"] == "com.clawkey.proxy"
     assert parsed["RunAtLoad"] is True
     assert parsed["KeepAlive"]["Crashed"] is True
     assert parsed["EnvironmentVariables"]["CLAWKEY_DIR"] == str(PROJECT_ROOT)
+    assert parsed["EnvironmentVariables"]["CLAWKEY_CONFIG_DIR"] == str(config_dir)
+    assert parsed["EnvironmentVariables"]["CLAWKEY_STATE_DIR"] == str(state_dir)
     assert parsed["ProgramArguments"][0].endswith("lib/launchd/run-proxy.sh")
 
 
