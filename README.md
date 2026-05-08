@@ -15,21 +15,22 @@ clawkey sets `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` on the `claude` sub
 
 ## Install
 
-One-liner:
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/pubino/clawkey/main/install.sh | bash
 ```
 
-Installs the script tree to `$XDG_DATA_HOME/clawkey`.  Re-run to update in place.
-
-```bash
-| bash -s reinstall              # wipe install dir, fresh download + venv
-| bash -s uninstall              # remove install (keeps user config)
-| bash -s uninstall --purge      # also remove ~/.config/clawkey + ~/.local/state/clawkey
-```
+Installs the script tree to `$XDG_DATA_HOME/clawkey` and symlinks `~/.local/bin/clawkey`.
 
 You'll also need the Claude Code CLI (`npm install -g @anthropic-ai/claude-code` or `brew install claude-code`) and a Portkey API key from your institution's AI Sandbox.
+
+After install, manage via the CLI:
+
+```bash
+clawkey update              # pull the latest release
+clawkey reinstall           # wipe install dir, fresh download + venv
+clawkey uninstall           # remove install (keeps user config)
+clawkey uninstall --purge   # also remove ~/.config/clawkey + ~/.local/state/clawkey
+```
 
 ## First-run setup
 
