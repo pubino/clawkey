@@ -162,17 +162,33 @@ jobs:
       - if: steps.detect.outputs.run == 'true'
         name: Hello-world inference end-to-end
         run: |
-          set -e
           # `clawkey run` cold-starts the LiteLLM proxy in this CI shell
           # (no persistent agent on Linux runners) and execs claude --print.
           # We assert the model returns the agreed-upon token to confirm the
           # full Anthropic → LiteLLM → Portkey → provider → response chain.
-          OUT=$(clawkey run --print "Reply with exactly the single word: PONG")
-          echo "── model response ──"
-          printf '%s\n' "$OUT"
-          echo "────────────────────"
-          echo "$OUT" | grep -qi 'pong' || {
-            echo "::error title=E2E failed::Response did not contain 'pong': $OUT"
+          # Run without errexit so we can surface the proxy log on failure
+          # (a non-zero exit before printing $OUT would otherwise hide the cause).
+          set +e
+          clawkey run --print "Reply with exactly the single word: PONG" \
+              > /tmp/e2e-stdout 2> /tmp/e2e-stderr
+          rc=$?
+          set -e
+
+          echo "── exit code: $rc ──"
+          echo "── stdout ──"
+          cat /tmp/e2e-stdout || true
+          echo "── stderr ──"
+          cat /tmp/e2e-stderr || true
+          echo "── proxy log (last 40 lines) ──"
+          tail -40 "$HOME/.local/state/clawkey/proxy.log" 2>/dev/null || echo "(no proxy log)"
+          echo "────────────────────────────────"
+
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=E2E failed::clawkey run exited $rc"
             exit 1
-          }
+          fi
+          if ! grep -qi 'pong' /tmp/e2e-stdout; then
+            echo "::error title=E2E failed::response did not contain 'pong'"
+            exit 1
+          fi
           echo "✓ End-to-end Claude Code → LiteLLM → Portkey works."
