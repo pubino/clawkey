@@ -147,6 +147,86 @@ mask_key() {
     fi
 }
 
+# Update PORTKEY_MODEL=<name> in $ENV_FILE in place, preserving every other
+# line (comments, ordering, unrelated keys). Creates the file if missing.
+# Idempotent: re-applying the same value is a no-op rewrite.
+_set_default_model() {
+    local name="$1"
+    local tmp
+    tmp=$(mktemp -t clawkey.env.XXXXXX) || return 1
+    local found=0
+    if [ -f "$ENV_FILE" ]; then
+        local line
+        while IFS= read -r line || [ -n "$line" ]; do
+            case "$line" in
+                PORTKEY_MODEL=*)
+                    printf 'PORTKEY_MODEL=%s\n' "$name" >> "$tmp"
+                    found=1
+                    ;;
+                *)
+                    printf '%s\n' "$line" >> "$tmp"
+                    ;;
+            esac
+        done < "$ENV_FILE"
+    fi
+    if [ "$found" -eq 0 ]; then
+        printf 'PORTKEY_MODEL=%s\n' "$name" >> "$tmp"
+    fi
+    mv "$tmp" "$ENV_FILE"
+    clawkey_secure_env_file_perms
+}
+
+# When PORTKEY_MODEL is unset, auto-pick a default from the configured
+# models (silent for a single model — "1 model = assumed default" — and
+# interactive for many) and persist the choice. Returns 0 if PORTKEY_MODEL
+# is set after the call, 1 if recovery isn't possible.
+_offer_pick_default_model() {
+    local models=()
+    local m
+    while IFS= read -r m; do
+        models+=("$m")
+    done < <(list_models)
+
+    if [ "${#models[@]}" -eq 0 ]; then
+        err "No default model is set, and no models are configured."
+        echo "  Add one and retry: clawkey models --add" >&2
+        return 1
+    fi
+
+    if [ "${#models[@]}" -eq 1 ]; then
+        # Single-model case: assume it's the default — no prompt.
+        _set_default_model "${models[0]}"
+        export PORTKEY_MODEL="${models[0]}"
+        info "Using ${CYAN}${models[0]}${RESET} ${DIM}(only configured model — saved as default)${RESET}"
+        return 0
+    fi
+
+    if [ ! -t 0 ]; then
+        err "PORTKEY_MODEL is not set and stdin isn't a TTY for interactive selection."
+        echo "  Configure it: clawkey config" >&2
+        return 1
+    fi
+
+    warn "No default model is set. Pick one:"
+    local i=1
+    for m in "${models[@]}"; do
+        echo -e "    ${CYAN}${i})${RESET} ${m}"
+        i=$((i + 1))
+    done
+    ask "Select model ${DIM}[1-${#models[@]}]${RESET}: "
+    local choice
+    read -r choice
+    if ! [ "$choice" -ge 1 ] 2>/dev/null || ! [ "$choice" -le "${#models[@]}" ] 2>/dev/null; then
+        err "Invalid selection."
+        return 1
+    fi
+    local picked="${models[$((choice - 1))]}"
+    _set_default_model "$picked"
+    export PORTKEY_MODEL="$picked"
+    ok "Saved default: ${GREEN}${picked}${RESET}"
+    return 0
+}
+
 # ── Commands ────────────────────────────────────────────────────────
 
 cmd_status() {
@@ -452,6 +532,16 @@ with open(path, 'w') as f:
 PYEOF
 
     ok "Added: ${GREEN}${name}${RESET}"
+
+    # If no default exists yet, the just-added model becomes it. Most users
+    # add their first model right after `clawkey config` (which can't write
+    # PORTKEY_MODEL when no models exist), and would otherwise dead-end on
+    # the next `clawkey run` with "PORTKEY_MODEL is not set".
+    if [ -z "$(get_model)" ]; then
+        _set_default_model "$name"
+        ok "Default: ${GREEN}${name}${RESET}"
+    fi
+
     if clawkey_proxy_loaded; then
         clawkey_proxy_reload_if_loaded
         ok "Persistent proxy reloaded."
@@ -591,7 +681,10 @@ _resolve_caller_dir_and_args() {
 # Returns 0 on success, non-zero with a printed error otherwise.
 _ensure_proxy_for_run() {
     clawkey_load_env || return 1
-    clawkey_require_env AI_SANDBOX_KEY PORTKEY_MODEL || return 1
+    clawkey_require_env AI_SANDBOX_KEY || return 1
+    if [ -z "${PORTKEY_MODEL:-}" ]; then
+        _offer_pick_default_model || return 1
+    fi
 
     if [ -z "${LITELLM_MASTER_KEY:-}" ]; then
         # Should not normally happen — clawkey config writes one. Mint a fresh one
@@ -651,7 +744,10 @@ cmd_ralph() {
     _resolve_caller_dir_and_args "$@" || return 1
 
     clawkey_load_env || return 1
-    clawkey_require_env AI_SANDBOX_KEY PORTKEY_MODEL || return 1
+    clawkey_require_env AI_SANDBOX_KEY || return 1
+    if [ -z "${PORTKEY_MODEL:-}" ]; then
+        _offer_pick_default_model || return 1
+    fi
 
     if ! command -v ralph &>/dev/null; then
         err "ralph not found. Install Ralph orchestrator first."
@@ -899,6 +995,37 @@ cmd_proxy_logs() {
     exec tail -F "$CLAWKEY_PROXY_LOG"
 }
 
+# ── Maintenance (delegate to the locally-installed install.sh) ──────
+#
+# install.sh is rsynced into $CLAWKEY_DIR alongside the rest of the tree
+# (see install.sh::cmd_install), so we always have a canonical updater on
+# disk. exec'ing into it means the user gets the same code path as the
+# canonical curl-pipe-bash one-liner.
+
+_require_install_sh() {
+    if [ ! -f "$CLAWKEY_DIR/install.sh" ]; then
+        err "install.sh not found at ${CLAWKEY_DIR}/install.sh"
+        echo "  Reinstall from source:"
+        echo "    curl -fsSL https://raw.githubusercontent.com/pubino/clawkey/main/install.sh | bash"
+        return 1
+    fi
+}
+
+cmd_update() {
+    _require_install_sh || return 1
+    exec bash "$CLAWKEY_DIR/install.sh" install
+}
+
+cmd_reinstall() {
+    _require_install_sh || return 1
+    exec bash "$CLAWKEY_DIR/install.sh" reinstall
+}
+
+cmd_uninstall() {
+    _require_install_sh || return 1
+    exec bash "$CLAWKEY_DIR/install.sh" uninstall ${1+"$@"}
+}
+
 # ── Interactive Menu ────────────────────────────────────────────────
 
 cmd_menu() {
@@ -934,6 +1061,22 @@ cmd_menu() {
 }
 
 # ── Main ────────────────────────────────────────────────────────────
+
+# Self-heal: if no default model is set but exactly one is configured,
+# adopt it. Matches the user expectation that a single configured model
+# is implicitly the default. Idempotent — fires once, then no-ops forever.
+# Skipped for the maintenance subcommands so `clawkey uninstall` doesn't
+# touch .env on its way out.
+case "${1:-}" in
+    update|reinstall|uninstall) ;;
+    *)
+        if [ -f "$ENV_FILE" ] && [ -z "$(get_model)" ] && [ "$(model_count)" = "1" ]; then
+            _only_model=$(list_models | head -n1)
+            _set_default_model "$_only_model"
+            unset _only_model
+        fi
+        ;;
+esac
 
 case "${1:-}" in
     status)
@@ -977,6 +1120,16 @@ case "${1:-}" in
                 ;;
         esac
         ;;
+    update)
+        cmd_update
+        ;;
+    reinstall)
+        cmd_reinstall
+        ;;
+    uninstall)
+        shift
+        cmd_uninstall "$@"
+        ;;
     help|--help|-h)
         echo ""
         echo -e "${WHITE}${BOLD}clawkey${RESET} — Claude Code + Ralph routed through LiteLLM + Portkey"
@@ -1001,6 +1154,11 @@ case "${1:-}" in
         echo "  clawkey proxy reload          Apply config / model changes"
         echo "  clawkey proxy status          Show install + health"
         echo "  clawkey proxy logs            Tail ~/.clawkey/proxy.log"
+        echo ""
+        echo -e "${DIM}Maintenance:${RESET}"
+        echo "  clawkey update                Update to the latest release"
+        echo "  clawkey reinstall             Wipe install dir, fresh download + venv"
+        echo "  clawkey uninstall [--purge]   Remove install (--purge also removes config + state)"
         echo ""
         ;;
     "")
