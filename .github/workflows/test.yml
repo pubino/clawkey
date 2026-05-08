@@ -89,12 +89,22 @@ jobs:
           pytest tests/ -v
 
   # ────────────────────────────────────────────────────────────────────
-  # End-to-end connectivity test: install Claude Code + clawkey from this
-  # commit, configure with the AI_SANDBOX_KEY secret, and ask the model
-  # to reply with a known token through the full LiteLLM → Portkey path.
+  # Install + config validation on a clean runner:
+  #   1. Install Claude Code via npm.
+  #   2. Install clawkey from this commit's tarball (exercises install.sh).
+  #   3. Write a clawkey config using the AI_SANDBOX_KEY secret.
+  #   4. Boot the LiteLLM proxy and confirm authed /health responds.
   #
-  # Skips gracefully (with a GitHub notice, exit 0) when the secret is
-  # not configured — e.g. PRs from forks, repos without the secret set.
+  # Live inference (the actual Anthropic → LiteLLM → Portkey → model call)
+  # is intentionally NOT asserted here: most institutional Portkey deployments
+  # (e.g. Princeton's AI Sandbox) IP-allowlist their model endpoints to
+  # campus / VPN networks, which excludes GitHub-hosted runners. A
+  # workflow_dispatch trigger lets a maintainer run this job from a
+  # self-hosted runner inside the allowlist when an inference smoke test
+  # is needed.
+  #
+  # Skips gracefully (exit 0 + GitHub notice) when the secret is not
+  # configured — e.g. PRs from forks, repos without the secret set.
   e2e:
     needs: test
     runs-on: ubuntu-latest
@@ -160,35 +170,62 @@ jobs:
           clawkey status
 
       - if: steps.detect.outputs.run == 'true'
-        name: Hello-world inference end-to-end
+        name: Boot proxy and verify authed /health (no upstream model call)
         run: |
-          # `clawkey run` cold-starts the LiteLLM proxy in this CI shell
-          # (no persistent agent on Linux runners) and execs claude --print.
-          # We assert the model returns the agreed-upon token to confirm the
-          # full Anthropic → LiteLLM → Portkey → provider → response chain.
-          # Run without errexit so we can surface the proxy log on failure
-          # (a non-zero exit before printing $OUT would otherwise hide the cause).
-          set +e
-          clawkey run --print "Reply with exactly the single word: PONG" \
-              > /tmp/e2e-stdout 2> /tmp/e2e-stderr
-          rc=$?
           set -e
 
-          echo "── exit code: $rc ──"
-          echo "── stdout ──"
-          cat /tmp/e2e-stdout || true
-          echo "── stderr ──"
-          cat /tmp/e2e-stderr || true
-          echo "── proxy log (last 40 lines) ──"
-          tail -40 "$HOME/.local/state/clawkey/proxy.log" 2>/dev/null || echo "(no proxy log)"
-          echo "────────────────────────────────"
+          # Pull AI_SANDBOX_KEY + LITELLM_MASTER_KEY from the .env that
+          # `clawkey config` wrote in the prior step. The master key gates
+          # /health so we need it in scope for the curl probes below.
+          set -a
+          # shellcheck disable=SC1091
+          . "$HOME/.config/clawkey/.env"
+          set +a
 
-          if [ "$rc" -ne 0 ]; then
-            echo "::error title=E2E failed::clawkey run exited $rc"
+          # Start the proxy directly via the venv install.sh provisioned.
+          # Bypassing `clawkey run` here keeps the test focused on install
+          # + config wiring; clawkey run would also exec claude --print,
+          # which makes a live model call we deliberately don't assert.
+          PROXY_LOG="$HOME/.local/state/clawkey/proxy.log"
+          mkdir -p "$(dirname "$PROXY_LOG")"
+          "$HOME/.local/share/clawkey/.venv/bin/litellm" \
+              --config "$HOME/.config/clawkey/litellm_config.yaml" \
+              --host 127.0.0.1 --port 4040 \
+              > "$PROXY_LOG" 2>&1 &
+          PID=$!
+          trap 'kill $PID 2>/dev/null || true; wait $PID 2>/dev/null || true' EXIT
+
+          for i in $(seq 1 30); do
+            if curl -sf -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+                http://127.0.0.1:4040/health >/dev/null 2>&1; then
+              echo "✓ proxy answered authed /health after ${i}s"
+              break
+            fi
+            if ! kill -0 $PID 2>/dev/null; then
+              echo "::error title=Install validation failed::Proxy died during startup"
+              tail -40 "$PROXY_LOG"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if ! curl -sf -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+              http://127.0.0.1:4040/health >/dev/null; then
+            echo "::error title=Install validation failed::Proxy did not become healthy in 30s"
+            tail -40 "$PROXY_LOG"
             exit 1
           fi
-          if ! grep -qi 'pong' /tmp/e2e-stdout; then
-            echo "::error title=E2E failed::response did not contain 'pong'"
-            exit 1
-          fi
-          echo "✓ End-to-end Claude Code → LiteLLM → Portkey works."
+
+          echo
+          echo "✓ Install + config validation passed:"
+          echo "    - Claude Code installed via npm"
+          echo "    - clawkey installed via install.sh from this commit"
+          echo "    - .env + litellm_config.yaml written under XDG paths"
+          echo "    - LiteLLM proxy boots from the venv and serves authed /health"
+          echo
+          echo "Note: live inference (Anthropic → LiteLLM → Portkey → model)"
+          echo "is not asserted here. Institutional Portkey deployments"
+          echo "typically IP-gate model endpoints to campus / VPN networks,"
+          echo "which excludes GitHub-hosted runners. Run this workflow on a"
+          echo "self-hosted runner inside the allowlist if you want a true"
+          echo "inference smoke test."
