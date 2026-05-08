@@ -11,7 +11,7 @@ Claude Code  →  LiteLLM Proxy (127.0.0.1:4040)  →  Portkey AI Gateway  →  
 
 LiteLLM translates Anthropic `tool_use` blocks ↔ OpenAI `function_call` so Claude Code's agent loop (file editing, code execution, tool use) works against non-Claude models.
 
-clawkey sets `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` on the `claude` subprocess it spawns — nothing else. Your shell, `~/.claude/`, project `.claude/`, and `ANTHROPIC_API_KEY` are never read or modified, so `claude` invoked outside clawkey still uses your normal Anthropic setup.
+clawkey sets `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` on the `claude` subprocess it spawns. Your shell, `~/.claude/`, project `.claude/`, and `ANTHROPIC_API_KEY` are never read or modified, so `claude` invoked outside clawkey still uses your normal Anthropic setup.
 
 ## Install
 
