@@ -738,6 +738,27 @@ cmd_proxy_install() {
         return 1
     fi
 
+    # macOS TCC denies launchd access to ~/Downloads, ~/Documents, and ~/Desktop
+    # by default. The plist would load fine, but bash run-proxy.sh would fail
+    # with "Operation not permitted" on every restart attempt — silent except
+    # in the log. Refuse up front; this only affects developers running out of
+    # a git checkout in those dirs (production users go through install.sh,
+    # which lands at $XDG_DATA_HOME/clawkey, not TCC-protected).
+    case "$CLAWKEY_DIR" in
+        "$HOME/Downloads"/*|"$HOME/Documents"/*|"$HOME/Desktop"/*)
+            err "clawkey is checked out under a TCC-protected directory:"
+            echo "    ${CLAWKEY_DIR}"
+            echo ""
+            echo "  macOS denies launchd access to ~/Downloads, ~/Documents, and"
+            echo "  ~/Desktop, so the daemon would fail with 'Operation not permitted'."
+            echo ""
+            echo "  Move the checkout to a non-TCC-protected location, e.g.:"
+            echo "    mv \"${CLAWKEY_DIR}\" \"\$HOME/src/clawkey\""
+            echo "  Or install the production layout: bash install.sh"
+            return 1
+            ;;
+    esac
+
     clawkey_state_dir_init
     : > "$CLAWKEY_PROXY_LOG"
 
@@ -815,7 +836,12 @@ cmd_proxy_reload() {
         return 1
     fi
     launchctl kickstart -k "gui/$(id -u)/${CLAWKEY_LAUNCHD_LABEL}" >/dev/null 2>&1 || true
-    ok "Reloaded ${CLAWKEY_LAUNCHD_LABEL}"
+    if clawkey_proxy_wait_running; then
+        ok "Reloaded ${CLAWKEY_LAUNCHD_LABEL}"
+    else
+        warn "Reloaded ${CLAWKEY_LAUNCHD_LABEL} but health didn't recover within 10s."
+        echo "  Check: clawkey proxy logs"
+    fi
 }
 
 cmd_proxy_status() {

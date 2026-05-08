@@ -41,7 +41,16 @@ if [ -d "$CLAWKEY_DIR/.venv" ]; then
 fi
 
 if ! command -v litellm >/dev/null 2>&1; then
-    echo "Error: litellm not on PATH after sourcing venv" >&2
+    # Distinguish "no venv" from "venv exists but is broken". A relocated venv
+    # has hardcoded interpreter paths in bin/activate and bin/litellm shebangs
+    # that point at the venv's original location, so command -v fails silently.
+    if [ -d "$CLAWKEY_DIR/.venv" ] && ! "$CLAWKEY_DIR/.venv/bin/python3" -c '' >/dev/null 2>&1; then
+        echo "Error: venv at $CLAWKEY_DIR/.venv is broken (likely relocated since creation)." >&2
+        echo "  Rebuild it:" >&2
+        echo "    cd $CLAWKEY_DIR && rm -rf .venv && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+    else
+        echo "Error: litellm not on PATH after sourcing venv" >&2
+    fi
     exit 127
 fi
 

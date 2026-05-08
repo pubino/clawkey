@@ -75,6 +75,70 @@ def test_run_proxy_wrapper_executable_and_syntactically_valid():
     subprocess.check_call(["bash", "-n", str(wrapper)])
 
 
+def test_proxy_install_refuses_tcc_protected_dirs():
+    """cmd_proxy_install must refuse to install when CLAWKEY_DIR is under a
+    TCC-protected dir — launchd-spawned processes can't read those paths,
+    so the daemon would silently fail."""
+    script = (PROJECT_ROOT / "clawkey").read_text()
+    install_block = script[script.index("cmd_proxy_install()") : script.index("cmd_proxy_uninstall()")]
+    for protected in ("$HOME/Downloads", "$HOME/Documents", "$HOME/Desktop"):
+        assert protected in install_block, (
+            f"cmd_proxy_install must check for {protected} (TCC-protected)"
+        )
+    # Must short-circuit before the bootstrap call.
+    tcc_idx = install_block.index('"$HOME/Downloads"/*')
+    bootstrap_idx = install_block.index("launchctl bootstrap")
+    assert tcc_idx < bootstrap_idx, "TCC check must run before launchctl bootstrap"
+
+
+def test_run_proxy_hints_when_venv_relocated():
+    """run-proxy.sh must hint that the venv may have been relocated when
+    activate succeeds but litellm isn't on PATH afterwards (a common dev
+    foot-gun: moving the checkout breaks the venv's hardcoded shebangs)."""
+    wrapper = (PROJECT_ROOT / "lib" / "launchd" / "run-proxy.sh").read_text()
+    assert "relocated" in wrapper, (
+        "run-proxy.sh must distinguish a relocated venv from a missing one"
+    )
+    assert "rm -rf .venv" in wrapper, (
+        "run-proxy.sh must include a rebuild recipe in its error hint"
+    )
+
+
+def test_cmd_proxy_reload_waits_for_health():
+    """After kickstart, cmd_proxy_reload must wait for /health to recover so
+    a follow-up `proxy status` doesn't race with daemon rebind."""
+    script = (PROJECT_ROOT / "clawkey").read_text()
+    reload_block = script[script.index("cmd_proxy_reload()") : script.index("cmd_proxy_status()")]
+    assert "clawkey_proxy_wait_running" in reload_block, (
+        "cmd_proxy_reload must call clawkey_proxy_wait_running after kickstart"
+    )
+
+
+def test_proxy_reload_if_loaded_waits_for_health():
+    """The reload-on-config-edit path must also wait so subsequent status
+    calls in the same flow report accurately."""
+    lib = (PROJECT_ROOT / "lib" / "clawkey-runtime.sh").read_text()
+    fn = lib[lib.index("clawkey_proxy_reload_if_loaded()") : lib.index("clawkey_proxy_wait_running()")]
+    assert "clawkey_proxy_wait_running" in fn, (
+        "reload_if_loaded must wait for health after kickstart"
+    )
+
+
+def test_requirements_litellm_floor_pulls_python314_compatible_orjson():
+    """litellm[proxy]>=1.40 resolves to a litellm whose orjson pin (==3.10.15)
+    has no cp314 wheels — installs blow up on Python 3.14 boxes. Pin the floor
+    high enough that pip resolves to a litellm whose orjson pin (==3.11.6+)
+    ships cp314 wheels."""
+    reqs = (PROJECT_ROOT / "requirements.txt").read_text()
+    m = re.search(r"^\s*litellm\[proxy\]\s*>=\s*(\d+)\.(\d+)", reqs, re.MULTILINE)
+    assert m, "requirements.txt must pin litellm[proxy] with a >= floor"
+    major, minor = int(m.group(1)), int(m.group(2))
+    assert (major, minor) >= (1, 75), (
+        f"litellm[proxy] floor {major}.{minor} is too low — pre-1.75 releases "
+        f"pin orjson<3.11, which has no Python 3.14 wheels"
+    )
+
+
 def test_proxy_status_runs_when_uninstalled(tmp_path, monkeypatch):
     """`clawkey proxy status` must succeed even with no plist installed."""
     # Run with HOME redirected so we don't depend on whether the user has
