@@ -36,22 +36,50 @@ Optional for Ralph orchestration:
 - [Ralph](https://github.com/ralph-cli/ralph) orchestrator
 - [aider](https://aider.chat) (for aider backend only)
 
+## Install
+
+One-liner — no `sudo`, no admin privileges:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pubino/clawkey/main/install.sh | bash
+```
+
+This installs the script tree to `$XDG_DATA_HOME/clawkey` *(default `~/.local/share/clawkey`)*, creates a Python venv with `litellm[proxy]`, and symlinks `clawkey` into `$HOME/.local/bin`. Re-running the same command updates in place.
+
+```bash
+# Update (same one-liner; idempotent)
+curl -fsSL https://raw.githubusercontent.com/pubino/clawkey/main/install.sh | bash
+
+# Reinstall (wipe install dir, fresh download + venv)
+curl -fsSL https://raw.githubusercontent.com/pubino/clawkey/main/install.sh | bash -s reinstall
+
+# Uninstall (preserves user config under ~/.config/clawkey)
+curl -fsSL https://raw.githubusercontent.com/pubino/clawkey/main/install.sh | bash -s uninstall
+
+# Uninstall AND remove user config + state
+curl -fsSL https://raw.githubusercontent.com/pubino/clawkey/main/install.sh | bash -s uninstall --purge
+```
+
+You'll also need:
+- **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`
+- A Portkey API key (`AI_SANDBOX_KEY` from your institution's AI Sandbox)
+
+Pin to a specific tag/branch with `CLAWKEY_REF`:
+
+```bash
+CLAWKEY_REF=v0.1.0 bash <(curl -fsSL https://raw.githubusercontent.com/pubino/clawkey/main/install.sh)
+```
+
 ## Quick Start
 
 ```bash
-# 1. Add your institution's models
-./clawkey models --add
-
-# 2. Configure your API key and default model
-./clawkey config
-
-# 3. Launch Claude Code
-./clawkey run
+clawkey config              # set Portkey API key + default model
+clawkey models --add        # add your institution's model names
+clawkey proxy install       # macOS: persistent proxy (optional, no sudo)
+clawkey run                 # launch Claude Code
 ```
 
-The proxy starts automatically and stops when you exit. To keep it always running (recommended for daily use), see [Persistent proxy](#persistent-proxy-recommended) below.
-
-> **Tip:** add `alias ck="$HOME/path/to/clawkey/clawkey"` to your shell rc, then use `ck run`, `ck ralph`, `ck proxy status`, etc.
+The proxy starts automatically and stops when you exit. After `clawkey proxy install`, it stays up in the background and `clawkey run` is near-instant. See [Persistent proxy](#persistent-proxy-recommended).
 
 ## Persistent proxy (recommended)
 
@@ -228,5 +256,7 @@ docker-compose run --rm test-config   # Config-only tests
 | `test_claude_config.py` | clawkey CLI structure, runtime lib, env wiring | Nothing |
 | `test_ralph_config.py` | ralph.yml, portkey-backend.sh, PROMPT.md, ralph subcommand | Nothing |
 | `test_proxy_subcommand.py` | launchd plist template, proxy install paths, no-sudo invariant | Nothing |
+| `test_xdg_migration.py` | Legacy → XDG migration helpers (hermetic `$HOME`) | Nothing |
+| `test_install_sh.py` | install.sh: install / update / reinstall / uninstall / purge | Nothing |
 | `test_litellm_proxy.py` | Health check, Messages API, tool_use round-trip | Running proxy + API key |
 | `test_portkey_connection.py` | Direct Portkey chat completions, per-model tests | API key |
