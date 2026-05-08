@@ -19,6 +19,11 @@ on:
   # the AI_SANDBOX_KEY secret).
   workflow_dispatch:
 
+# Least-privilege GITHUB_TOKEN. The test workflow only needs to read repo
+# contents (checkout); it never writes issues, releases, or packages.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest

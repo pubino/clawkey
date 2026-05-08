@@ -51,6 +51,13 @@ clawkey_state_dir_init() {
     mkdir -p "$CLAWKEY_STATE_DIR"
 }
 
+# Ensure CLAWKEY_ENV_FILE is owner-only (0600). The .env holds AI_SANDBOX_KEY
+# and LITELLM_MASTER_KEY; default umask on most shells creates files at 0644
+# which lets any local user read them. Idempotent and quiet on missing file.
+clawkey_secure_env_file_perms() {
+    [ -f "$CLAWKEY_ENV_FILE" ] && chmod 0600 "$CLAWKEY_ENV_FILE" 2>/dev/null || true
+}
+
 # Seed CLAWKEY_MODEL_CONFIG from the in-tree template on first use so
 # `clawkey models --add` has a file to edit.
 clawkey_seed_model_config() {
@@ -70,6 +77,9 @@ clawkey_migrate_legacy_config() {
     if [ -f "$legacy_env" ] && [ ! -f "$CLAWKEY_ENV_FILE" ]; then
         clawkey_config_dir_init
         mv "$legacy_env" "$CLAWKEY_ENV_FILE"
+        # mv preserves the source's mode; the legacy .env was likely 0644.
+        # Tighten now so the secret isn't world-readable.
+        clawkey_secure_env_file_perms
         echo "Moved $legacy_env -> $CLAWKEY_ENV_FILE (XDG layout)" >&2
     fi
     local legacy_log="$HOME/.clawkey/proxy.log"
